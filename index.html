@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#15344a">
+  <meta name="description" content="Aplicativo offline da viagem Europa 2026">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Europa 2026</title>
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">VIAGEM EM FAMÍLIA</div>
+        <h1>Europa 2026</h1>
+      </div>
+      <div class="top-actions">
+        <button id="themeBtn" class="icon-btn" aria-label="Alternar tema">◐</button>
+        <button id="installBtn" class="icon-btn" hidden aria-label="Instalar app">＋</button>
+      </div>
+    </header>
+
+    <main id="main"></main>
+
+    <nav class="bottom-nav" aria-label="Navegação principal">
+      <button data-view="home" class="active">⌂<span>Início</span></button>
+      <button data-view="itinerary">◷<span>Roteiro</span></button>
+      <button data-view="expenses">€<span>Gastos</span></button>
+      <button data-view="reservations">◎<span>Reservas</span></button>
+      <button data-view="more">☰<span>Mais</span></button>
+    </nav>
+  </div>
+
+  <dialog id="expenseDialog">
+    <form method="dialog" id="expenseForm">
+      <div class="dialog-head">
+        <h2>Novo gasto</h2>
+        <button value="cancel" class="icon-btn">×</button>
+      </div>
+      <label>Descrição<input name="description" required placeholder="Ex.: almoço em Zurique"></label>
+      <div class="grid-2">
+        <label>Valor<input name="amount" type="number" min="0" step="0.01" required></label>
+        <label>Moeda<select name="currency"><option>EUR</option><option>DKK</option><option>CHF</option><option>USD</option><option>BRL</option></select></label>
+      </div>
+      <div class="grid-2">
+        <label>Carteira<select name="walletId" id="walletSelect"></select></label>
+        <label>Responsável<select name="payer"><option value="filipe">Filipe</option><option value="mae">Mãe</option><option value="shared">Compartilhado</option></select></label>
+      </div>
+      <label>Data<input name="date" type="date" required></label>
+      <label>Categoria<select name="category"><option>Alimentação</option><option>Transporte</option><option>Compras</option><option>Atividade</option><option>Hotel</option><option>Outros</option></select></label>
+      <label>Observação<textarea name="note" rows="3"></textarea></label>
+      <button class="primary" value="default">Salvar gasto</button>
+    </form>
+  </dialog>
+
+  <dialog id="documentDialog">
+    <form method="dialog" id="documentForm">
+      <div class="dialog-head">
+        <h2>Adicionar documento</h2>
+        <button value="cancel" class="icon-btn">×</button>
+      </div>
+      <input type="hidden" name="docId">
+      <label>Arquivo<input type="file" name="file" required></label>
+      <p class="muted">O arquivo fica somente neste navegador, usando armazenamento local. Ele não é enviado ao GitHub.</p>
+      <button class="primary" value="default">Salvar no dispositivo</button>
+    </form>
+  </dialog>
+
+  <script src="./data.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
