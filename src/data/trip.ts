@@ -44,6 +44,7 @@ export type Activity = {
   estimatedCurrency?: Currency;
   suggestedWallet?: WalletId;
   completed?: boolean;
+  documentSuggestionIds?: string[];
 };
 
 export type Day = {
@@ -785,6 +786,7 @@ export const days: Day[] = [
     activities: [
       a({
         id: 'd01-a01',
+        documentSuggestionIds: ['docs-turkish'],
         date: '2026-09-17',
         time: '16:35',
         title: 'Turkish Airlines • GRU → IST → CPH',
@@ -830,6 +832,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd02-a03',
+        documentSuggestionIds: ['docs-hotels'],
         date: '2026-09-18',
         title: 'Check-in • 1 Hotel Copenhagen',
         category: 'Hotel',
@@ -924,6 +927,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd03-a06',
+        documentSuggestionIds: ['docs-noma'],
         date: '2026-09-19',
         time: '17:00',
         title: 'Noma • Shared Table',
@@ -950,6 +954,7 @@ export const days: Day[] = [
     activities: [
       a({
         id: 'd04-a01',
+        documentSuggestionIds: ['docs-kynd'],
         date: '2026-09-20',
         time: '09:00–10:15',
         title: 'KYND Saunagus • Kalvebod Brygge / Marriott',
@@ -973,6 +978,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd04-a03',
+        documentSuggestionIds: ['docs-barr'],
         date: '2026-09-20',
         time: '12:30',
         title: 'Restaurant Barr • almoço',
@@ -999,6 +1005,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd04-a05',
+        documentSuggestionIds: ['docs-tivoli'],
         date: '2026-09-20',
         time: 'Fim da tarde / noite',
         title: 'Tivoli Gardens',
@@ -1035,6 +1042,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd05-a02',
+        documentSuggestionIds: ['docs-zoo'],
         date: '2026-09-21',
         time: '09:30–12:15',
         title: 'Copenhagen Zoo',
@@ -1123,6 +1131,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd06-a03',
+        documentSuggestionIds: ['docs-klm'],
         date: '2026-09-22',
         time: '~14:45',
         title: 'Voo CPH → AMS',
@@ -1147,6 +1156,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd06-a05',
+        documentSuggestionIds: ['docs-hotels'],
         date: '2026-09-22',
         title: 'Check-in • NH Collection Amsterdam Flower Market',
         category: 'Hotel',
@@ -1190,6 +1200,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd07-a02',
+        documentSuggestionIds: ['docs-nemo'],
         date: '2026-09-23',
         time: '10:00–12:15',
         title: 'NEMO Science Museum',
@@ -1328,6 +1339,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd08-a02',
+        documentSuggestionIds: ['docs-gouda'],
         date: '2026-09-24',
         time: '09:30–11:00',
         title: 'Gouda Cheese Experience',
@@ -1429,6 +1441,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd09-a03',
+        documentSuggestionIds: ['docs-ice'],
         date: '2026-09-25',
         time: '16:33',
         title: 'ICE 129 • Amsterdam Centraal → Frankfurt(Main)Hbf',
@@ -1441,6 +1454,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd09-a04',
+        documentSuggestionIds: ['docs-hotels'],
         date: '2026-09-25',
         time: '~20:27',
         title: 'Check-in • ibis Frankfurt Centrum',
@@ -1473,6 +1487,7 @@ export const days: Day[] = [
     activities: [
       a({
         id: 'd10-a01',
+        documentSuggestionIds: ['docs-car', 'docs-cnh'],
         date: '2026-09-26',
         time: '~10:00',
         title: 'Retirada do carro • SIXT Frankfurt/Main Central Station',
@@ -1516,6 +1531,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd10-a05',
+        documentSuggestionIds: ['docs-hotels'],
         date: '2026-09-26',
         title: 'Chegada / check-in • Sofitel Strasbourg Grande Île',
         category: 'Hotel',
@@ -1613,6 +1629,7 @@ export const days: Day[] = [
     activities: [
       a({
         id: 'd12-a01',
+        documentSuggestionIds: ['docs-europapark'],
         date: '2026-09-28',
         time: 'Dia inteiro',
         title: 'Europa-Park',
@@ -1647,6 +1664,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd12-a04',
+        documentSuggestionIds: ['docs-hotels'],
         date: '2026-09-28',
         time: 'Noite',
         title: 'Check-in • ibis Styles Colmar Centre',
@@ -1722,6 +1740,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd13-a05',
+        documentSuggestionIds: ['docs-hotels'],
         date: '2026-09-29',
         time: '~18:00',
         title: 'Check-in • 25hours Hotel Zürich West',
@@ -1768,6 +1787,7 @@ export const days: Day[] = [
     activities: [
       a({
         id: 'd14-a01',
+        documentSuggestionIds: ['docs-laderach'],
         date: '2026-09-30',
         time: '10:00–10:45',
         title: 'House of Läderach',
@@ -1819,6 +1839,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd14-a05',
+        documentSuggestionIds: ['docs-chaesalp'],
         date: '2026-09-30',
         time: 'Noite • horário a definir',
         title: 'Chäsalp • fondue',
@@ -1855,6 +1876,7 @@ export const days: Day[] = [
     activities: [
       a({
         id: 'd15-a01',
+        documentSuggestionIds: ['docs-lindt'],
         date: '2026-10-01',
         time: '10:00',
         title: 'Lindt Home of Chocolate',
@@ -1944,6 +1966,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd16-a03',
+        documentSuggestionIds: ['docs-car', 'docs-cnh'],
         date: '2026-10-02',
         time: '10:00',
         title: 'Devolução do carro • SIXT Zurich Airport',
@@ -1965,6 +1988,7 @@ export const days: Day[] = [
       }),
       a({
         id: 'd16-a05',
+        documentSuggestionIds: ['docs-turkish'],
         date: '2026-10-02',
         time: '13:40',
         title: 'Turkish Airlines • voo de retorno',
