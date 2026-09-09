@@ -6,7 +6,7 @@ import {
   ChevronRight,
   CircleCheckBig,
   Clock3,
-  Download,
+  Eye,
   FilePlus2,
   Files,
   FolderOpen,
@@ -290,6 +290,7 @@ export default function App() {
   const [expenseActivity, setExpenseActivity] = useState<Activity | undefined>();
   const [docOpen, setDocOpen] = useState(false);
   const [docSuggestion, setDocSuggestion] = useState<DocumentSuggestion | undefined>();
+  const [docReplace, setDocReplace] = useState<Doc | undefined>();
   const [extraOpen, setExtraOpen] = useState(false);
   const [extraToSchedule, setExtraToSchedule] = useState<ExtraItem | undefined>();
 
@@ -342,11 +343,6 @@ export default function App() {
           <span className="eyebrow">EUROPA 2026</span>
           <h1>Modo <i>viagem</i></h1>
         </div>
-
-        <button className="quick-add" onClick={() => openExpense()}>
-          <Plus size={18} />
-          <span>Gasto</span>
-        </button>
       </header>
 
       <main>
@@ -358,6 +354,7 @@ export default function App() {
             expenses={expenses}
             completed={completed}
             scheduledExtras={scheduledExtras}
+            docs={docs}
             onExpense={openExpense}
             onToggleCompleted={toggleCompleted}
             onScheduleExtra={(extra) => {
@@ -383,12 +380,14 @@ export default function App() {
           <DocumentsView
             docs={docs}
             setDocs={setDocs}
-            openSuggestion={(suggestion) => {
+            openSuggestion={(suggestion, existing) => {
               setDocSuggestion(suggestion);
+              setDocReplace(existing);
               setDocOpen(true);
             }}
-            openOther={() => {
+            openOther={(existing) => {
               setDocSuggestion(undefined);
+              setDocReplace(existing);
               setDocOpen(true);
             }}
           />
@@ -439,11 +438,19 @@ export default function App() {
       <DocumentDialog
         open={docOpen}
         suggestion={docSuggestion}
+        existing={docReplace}
         onClose={() => {
           setDocOpen(false);
           setDocSuggestion(undefined);
+          setDocReplace(undefined);
         }}
-        onAdd={(doc) => setDocs([doc, ...docs])}
+        onSave={(doc) => {
+          if (docReplace) {
+            setDocs(docs.map((item) => (item.id === docReplace.id ? doc : item)));
+          } else {
+            setDocs([doc, ...docs]);
+          }
+        }}
       />
 
       <ScheduleExtraDialog
@@ -471,6 +478,7 @@ function TodayView({
   expenses,
   completed,
   scheduledExtras,
+  docs,
   onExpense,
   onToggleCompleted,
   onScheduleExtra,
@@ -482,6 +490,7 @@ function TodayView({
   expenses: Expense[];
   completed: Record<string, boolean>;
   scheduledExtras: ScheduledExtra[];
+  docs: Doc[];
   onExpense: (activity?: Activity) => void;
   onToggleCompleted: (activityId: string) => void;
   onScheduleExtra: (extra: ExtraItem) => void;
@@ -563,6 +572,7 @@ function TodayView({
             key={activity.id}
             activity={activity}
             expenses={expenses.filter((expense) => expense.activityId === activity.id)}
+            docs={docs}
             onExpense={() => onExpense(activity)}
             onToggleCompleted={() => onToggleCompleted(activity.id)}
             onRemoveExtra={
@@ -676,18 +686,30 @@ function DayStrip({
 function TravelActivityCard({
   activity,
   expenses,
+  docs,
   onExpense,
   onToggleCompleted,
   onRemoveExtra,
 }: {
   activity: Activity;
   expenses: Expense[];
+  docs: Doc[];
   onExpense: () => void;
   onToggleCompleted: () => void;
   onRemoveExtra?: () => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<Doc | undefined>();
   const place = placeFor(activity);
+  const linkedDocs = (activity.documentSuggestionIds || [])
+    .map((suggestionId) => docs.find((doc) => doc.suggestionId === suggestionId))
+    .filter(Boolean) as Doc[];
+  const hasDetails = Boolean(
+    activity.note ||
+    activity.people ||
+    place?.address ||
+    linkedDocs.length > 0
+  );
   const realTotals = totalsFromExpenses(expenses);
 
   const sameCurrencyActual = activity.estimatedCurrency
@@ -761,6 +783,35 @@ function TravelActivityCard({
             {activity.people && <p><b>Pessoas:</b> {activity.people}</p>}
             {activity.note && <p>{activity.note}</p>}
             {place?.address && <p><b>Local:</b> {place.address}</p>}
+
+            {linkedDocs.length > 0 && (
+              <div className="event-documents">
+                <div className="event-documents-head">
+                  <Files size={15} />
+                  <b>Documentos</b>
+                </div>
+
+                <div className="event-document-list">
+                  {linkedDocs.map((doc) => (
+                    <div className="event-document-row" key={doc.id}>
+                      <div className="event-document-copy">
+                        <b>{doc.name}</b>
+                        {doc.original && <span>{doc.original}</span>}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="event-document-view"
+                        onClick={() => setPreviewDoc(doc)}
+                      >
+                        <Eye size={15} />
+                        Ver
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -787,7 +838,7 @@ function TravelActivityCard({
             Gasto
           </button>
 
-          {(activity.note || activity.people || place?.address) && (
+          {hasDetails && (
             <button className="event-action" onClick={() => setDetailsOpen(!detailsOpen)}>
               <ChevronRight size={15} />
               {detailsOpen ? 'Fechar' : 'Detalhes'}
@@ -807,6 +858,11 @@ function TravelActivityCard({
           )}
         </div>
       </div>
+
+      <DocumentPreviewDialog
+        doc={previewDoc}
+        onClose={() => setPreviewDoc(undefined)}
+      />
     </article>
   );
 }
@@ -865,25 +921,6 @@ function MoneyView({
         title="Dinheiro da viagem"
         subtitle="O gasto lançado em cada evento baixa automaticamente da carteira escolhida."
       />
-
-      <div className="money-hero current-money-hero">
-        <div>
-          <span className="eyebrow">SALDO ATUAL</span>
-          <h2>
-            € {(balances.eurcash + balances.eurnomad).toLocaleString('pt-BR', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-            <small> + </small>
-            US$ {balances.usdnomad.toLocaleString('pt-BR', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
-          </h2>
-          <p>Saldo calculado a partir dos gastos realmente lançados no aplicativo.</p>
-        </div>
-        <WalletCards size={38} />
-      </div>
 
       <div className="wallet-grid">
         {wallets.map((wallet) => {
@@ -1272,49 +1309,33 @@ function DocumentsView({
 }: {
   docs: Doc[];
   setDocs: (docs: Doc[]) => void;
-  openSuggestion: (suggestion: DocumentSuggestion) => void;
-  openOther: () => void;
+  openSuggestion: (suggestion: DocumentSuggestion, existing?: Doc) => void;
+  openOther: (existing?: Doc) => void;
 }) {
   const categories: DocumentCategory[] = ['Essenciais', 'Reservas', 'Ingressos'];
-
-  async function openDocument(doc: Doc) {
-    const tab = window.open('', '_blank');
-    const file = await getFile(doc.id);
-
-    if (!file) {
-      tab?.close();
-      return;
-    }
-
-    const url = URL.createObjectURL(file);
-
-    if (tab) {
-      tab.location.href = url;
-    } else {
-      window.location.href = url;
-    }
-
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  }
+  const [previewDoc, setPreviewDoc] = useState<Doc | undefined>();
 
   async function removeDocument(doc: Doc) {
     await deleteFile(doc.id);
     setDocs(docs.filter((item) => item.id !== doc.id));
+    if (previewDoc?.id === doc.id) setPreviewDoc(undefined);
   }
+
+  const otherDocs = docs.filter((doc) => !doc.suggestionId);
 
   return (
     <section className="page">
       <PageTitle
         kicker="DOCUMENTOS"
         title="Tudo que precisa estar à mão"
-        subtitle="A lista começa vazia. As sugestões abaixo ajudam a não esquecer nenhum documento importante."
+        subtitle="Adicione cada arquivo diretamente no item correspondente. Depois, toque em Ver para abrir sem sair do aplicativo."
       />
 
       <div className="document-security-note">
         <FolderOpen size={20} />
         <div>
           <b>Arquivos ficam neste aparelho</b>
-          <span>Os PDFs não são enviados para o repositório público do GitHub.</span>
+          <span>Os PDFs e imagens não são enviados para o repositório público do GitHub.</span>
         </div>
       </div>
 
@@ -1332,7 +1353,8 @@ function DocumentsView({
 
             <div className="document-suggestion-list">
               {suggestions.map((suggestion) => {
-                const included = docs.some((doc) => doc.suggestionId === suggestion.id);
+                const includedDoc = docs.find((doc) => doc.suggestionId === suggestion.id);
+                const included = Boolean(includedDoc);
 
                 return (
                   <div className={`document-suggestion ${included ? 'included' : ''}`} key={suggestion.id}>
@@ -1343,10 +1365,34 @@ function DocumentsView({
                     <div className="document-suggestion-main">
                       <b>{suggestion.name}</b>
                       {suggestion.traveler && <span>{suggestion.traveler}</span>}
+                      {includedDoc?.original && (
+                        <small className="document-filename">{includedDoc.original}</small>
+                      )}
                     </div>
 
-                    {included ? (
-                      <span className="included-label">incluído</span>
+                    {includedDoc ? (
+                      <div className="document-inline-actions">
+                        <button
+                          className="doc-action view"
+                          onClick={() => setPreviewDoc(includedDoc)}
+                        >
+                          <Eye size={15} />
+                          Ver
+                        </button>
+                        <button
+                          className="doc-action"
+                          onClick={() => openSuggestion(suggestion, includedDoc)}
+                        >
+                          Substituir
+                        </button>
+                        <button
+                          className="doc-action danger"
+                          onClick={() => removeDocument(includedDoc)}
+                        >
+                          <Trash2 size={14} />
+                          Excluir
+                        </button>
+                      </div>
                     ) : (
                       <button className="primary-mini" onClick={() => openSuggestion(suggestion)}>
                         Adicionar
@@ -1360,52 +1406,53 @@ function DocumentsView({
         );
       })}
 
-      <div className="other-document-card">
-        <div>
-          <span className="eyebrow">OUTROS</span>
-          <h3>Documento adicional</h3>
-          <p>Use para qualquer confirmação, comprovante ou arquivo que não esteja na lista.</p>
+      <section className="other-document-section">
+        <div className="other-document-card">
+          <div>
+            <span className="eyebrow">OUTROS</span>
+            <h3>Documento adicional</h3>
+            <p>Use para confirmações, comprovantes ou arquivos que não estejam na lista acima.</p>
+          </div>
+          <button className="primary-mini" onClick={() => openOther()}>
+            <Plus size={16} />
+            Outro documento
+          </button>
         </div>
-        <button className="primary-mini" onClick={openOther}>
-          <Plus size={16} />
-          Outro documento
-        </button>
-      </div>
 
-      <div className="section-head">
-        <div>
-          <span className="eyebrow">ARQUIVOS INCLUÍDOS</span>
-          <h3>{docs.length} documentos</h3>
-        </div>
-      </div>
+        {otherDocs.length > 0 && (
+          <div className="other-document-list">
+            {otherDocs.map((doc) => (
+              <div className="other-document-row" key={doc.id}>
+                <div className="document-check included-small">
+                  <Check size={15} />
+                </div>
 
-      {docs.length === 0 ? (
-        <Empty
-          icon={<Files />}
-          title="Nenhum documento incluído"
-          text="Comece pelos passaportes e seguros da família."
-        />
-      ) : (
-        <div className="document-list">
-          {docs.map((doc) => (
-            <div className="document-row" key={doc.id}>
-              <div>
-                <b>{doc.name}</b>
-                <span>{doc.category || doc.type} • {doc.traveler || 'Família'}</span>
+                <div className="document-suggestion-main">
+                  <b>{doc.name}</b>
+                  <span>{doc.traveler || 'Família'}</span>
+                  {doc.original && <small className="document-filename">{doc.original}</small>}
+                </div>
+
+                <div className="document-inline-actions">
+                  <button className="doc-action view" onClick={() => setPreviewDoc(doc)}>
+                    <Eye size={15} />
+                    Ver
+                  </button>
+                  <button className="doc-action" onClick={() => openOther(doc)}>
+                    Substituir
+                  </button>
+                  <button className="doc-action danger" onClick={() => removeDocument(doc)}>
+                    <Trash2 size={14} />
+                    Excluir
+                  </button>
+                </div>
               </div>
+            ))}
+          </div>
+        )}
+      </section>
 
-              <div className="document-actions">
-                <button className="icon-btn" onClick={() => openDocument(doc)} aria-label="Abrir documento">
-                  <Download size={17} />
-                </button>
-                <button className="icon-btn danger" onClick={() => removeDocument(doc)} aria-label="Excluir documento">
-                  <Trash2 size={17} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <DocumentPreviewDialog doc={previewDoc} onClose={() => setPreviewDoc(undefined)} />
     </section>
   );
 }
@@ -1413,13 +1460,15 @@ function DocumentsView({
 function DocumentDialog({
   open,
   suggestion,
+  existing,
   onClose,
-  onAdd,
+  onSave,
 }: {
   open: boolean;
   suggestion?: DocumentSuggestion;
+  existing?: Doc;
   onClose: () => void;
-  onAdd: (doc: Doc) => void;
+  onSave: (doc: Doc) => void;
 }) {
   const [file, setFile] = useState<File | undefined>();
   const [name, setName] = useState('');
@@ -1429,35 +1478,41 @@ function DocumentDialog({
   useEffect(() => {
     if (!open) return;
     setFile(undefined);
-    setName(suggestion?.name || '');
-    setTraveler(suggestion?.traveler || 'Família');
-    setCategory(suggestion?.category || 'Outros');
-  }, [open, suggestion]);
+    setName(existing?.name || suggestion?.name || '');
+    setTraveler(existing?.traveler || suggestion?.traveler || 'Família');
+    setCategory(existing?.category || suggestion?.category || 'Outros');
+  }, [open, suggestion, existing]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!file || !name) return;
 
-    const id = crypto.randomUUID();
+    const id = existing?.id || crypto.randomUUID();
     await putFile(id, file);
 
-    onAdd({
+    onSave({
       id,
       name,
       type: category,
       traveler,
       original: file.name,
       stored: true,
-      createdAt: new Date().toISOString(),
-      suggestionId: suggestion?.id,
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      suggestionId: suggestion?.id || existing?.suggestionId,
       category,
     });
 
     onClose();
   }
 
+  const dialogTitle = existing
+    ? 'Substituir documento'
+    : suggestion
+      ? 'Adicionar documento'
+      : 'Outro documento';
+
   return (
-    <Dialog open={open} onClose={onClose} title={suggestion ? 'Adicionar documento' : 'Outro documento'}>
+    <Dialog open={open} onClose={onClose} title={dialogTitle}>
       <form onSubmit={submit} className="form-grid">
         <label className="full">
           Nome
@@ -1489,13 +1544,16 @@ function DocumentDialog({
         </label>
 
         <label className="full file-input-label">
-          Arquivo
+          {existing ? 'Novo arquivo' : 'Arquivo'}
           <input
             type="file"
             accept="application/pdf,image/*"
             onChange={(event) => setFile(event.target.files?.[0])}
           />
-          {file && <span>{file.name}</span>}
+          {existing?.original && !file && (
+            <span>Atual: {existing.original}</span>
+          )}
+          {file && <span>Novo: {file.name}</span>}
         </label>
 
         <div className="form-actions full">
@@ -1503,10 +1561,109 @@ function DocumentDialog({
             Cancelar
           </button>
           <button className="primary" disabled={!file || !name}>
-            Salvar documento
+            {existing ? 'Substituir arquivo' : 'Salvar documento'}
           </button>
         </div>
       </form>
+    </Dialog>
+  );
+}
+
+function DocumentPreviewDialog({
+  doc,
+  onClose,
+}: {
+  doc?: Doc;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState<string | undefined>();
+  const [mime, setMime] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [missing, setMissing] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | undefined;
+    let cancelled = false;
+
+    if (!doc) {
+      setUrl(undefined);
+      setMime('');
+      setMissing(false);
+      return;
+    }
+
+    setLoading(true);
+    setMissing(false);
+
+    getFile(doc.id)
+      .then((file) => {
+        if (cancelled) return;
+
+        if (!file) {
+          setMissing(true);
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(file);
+        setUrl(objectUrl);
+        setMime(file.type || '');
+      })
+      .catch(() => {
+        if (!cancelled) setMissing(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [doc]);
+
+  const isPdf = mime === 'application/pdf' || doc?.original?.toLowerCase().endsWith('.pdf');
+  const isImage = mime.startsWith('image/');
+
+  return (
+    <Dialog open={Boolean(doc)} onClose={onClose} title={doc?.name || 'Documento'}>
+      <div className="document-preview">
+        {loading && <div className="document-preview-message">Abrindo documento…</div>}
+
+        {!loading && missing && (
+          <div className="document-preview-message error">
+            O arquivo não foi encontrado neste aparelho. Adicione-o novamente.
+          </div>
+        )}
+
+        {!loading && !missing && url && isPdf && (
+          <iframe
+            className="document-preview-frame"
+            src={url}
+            title={doc?.name || 'Documento PDF'}
+          />
+        )}
+
+        {!loading && !missing && url && isImage && (
+          <img
+            className="document-preview-image"
+            src={url}
+            alt={doc?.name || 'Documento'}
+          />
+        )}
+
+        {!loading && !missing && url && !isPdf && !isImage && (
+          <div className="document-preview-message">
+            Este formato não possui pré-visualização interna.
+          </div>
+        )}
+
+        {doc?.original && (
+          <div className="document-preview-footer">
+            <span>Arquivo</span>
+            <b>{doc.original}</b>
+          </div>
+        )}
+      </div>
     </Dialog>
   );
 }
