@@ -1,177 +1,1914 @@
-import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, WalletCards, FolderLock, MapPinned, CircleCheckBig, Plus, Plane, Car, Utensils, MapPin, ExternalLink, FileUp, Download, Trash2, Phone, AlertTriangle, Sparkles, ChevronRight, BadgeDollarSign, Route, X, Search } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  CircleCheckBig,
+  Clock3,
+  Eye,
+  FilePlus2,
+  Files,
+  FolderOpen,
+  MapPin,
+  Navigation,
+  Phone,
+  Plus,
+  ReceiptText,
+  RotateCcw,
+  Trash2,
+  WalletCards,
+} from 'lucide-react';
+
 import Dialog from './components/Dialog';
-import PlaceImage from './components/PlaceImage';
 import MapView from './components/MapView';
-import { days, insurancePhones, places, seedChecklist, seedDocuments, trip, wallets, type Currency } from './data/trip';
-import { brDate, googleMaps, money } from './lib/format';
-import { deleteFile, getFile, load, putFile, save } from './lib/storage';
+import {
+  days,
+  documentSuggestions,
+  extrasByDate,
+  insurancePhones,
+  places,
+  seedChecklist,
+  seedDocuments,
+  wallets,
+  type Activity,
+  type Currency,
+  type Day,
+  type DocumentCategory,
+  type DocumentSuggestion,
+  type ExtraItem,
+  type WalletId,
+} from './data/trip';
+import {
+  brFullDate,
+  exchangeExplanation,
+  fallbackRates,
+  googleMapsDirections,
+  money,
+  walletDebitAmount,
+  type ExchangeRates,
+} from './lib/format';
+import {
+  deleteFile,
+  getFile,
+  load,
+  putFile,
+  save,
+} from './lib/storage';
 
-type Tab='home'|'route'|'map'|'money'|'vault'|'more';
-type Expense={id:string;date:string;city:string;description:string;category:string;currency:Currency;amount:number;wallet:string;note?:string};
-type Doc={id:string;name:string;type:string;traveler:string;original?:string;stored?:boolean;createdAt?:string};
+type Tab = 'today' | 'money' | 'documents' | 'ops';
 
-const cityBudgetUSD:Record<string,number>={
- 'Copenhague':1845,'Amsterdã':987,'Frankfurt':313,'Estrasburgo':777,'Colmar':389,'Zurique':1186,'Zurique / Graubünden':333,'São Paulo':0
+type Expense = {
+  id: string;
+  date: string;
+  city: string;
+  description: string;
+  category: string;
+  currency: Currency;
+  amount: number;
+  wallet: WalletId;
+  activityId?: string;
+  debitCurrency: 'EUR' | 'USD';
+  debitAmount: number;
+  exchangeRate?: number;
+  note?: string;
+  createdAt?: string;
 };
-function usePersisted<T>(key:string,initial:T){const [v,setV]=useState<T>(()=>load(key,initial));useEffect(()=>save(key,v),[key,v]);return [v,setV] as const}
 
-export default function App(){
- const [tab,setTab]=useState<Tab>('home');
- const [expenses,setExpenses]=usePersisted<Expense[]>('europa-expenses',[]);
- const [check,setCheck]=usePersisted<Record<string,boolean>>('europa-checklist',{});
- const [docs,setDocs]=usePersisted<Doc[]>('europa-docs',seedDocuments);
- const [expenseOpen,setExpenseOpen]=useState(false);
- const [docOpen,setDocOpen]=useState(false);
- const [routeFilter,setRouteFilter]=useState('');
- const todayIso=new Date().toISOString().slice(0,10);
- const tripDay=days.find(d=>d.date===todayIso) || days[0];
- const daysUntil=Math.ceil((new Date(trip.start+'T12:00:00').getTime()-Date.now())/86400000);
- const totalBudget=Object.values(cityBudgetUSD).reduce((a,b)=>a+b,0);
- const spentUSD=expenses.reduce((s,e)=>s+toUSD(e.amount,e.currency),0);
- const checklistPct=Math.round(Object.values(check).filter(Boolean).length/seedChecklist.length*100)||0;
- const nextUnpaid=days.flatMap(d=>d.activities).find(a=>a.status==='confirmado'&&a.paid==='nao');
+type Doc = {
+  id: string;
+  name: string;
+  type: string;
+  traveler: string;
+  original?: string;
+  stored?: boolean;
+  createdAt?: string;
+  suggestionId?: string;
+  category?: DocumentCategory | 'Outros';
+};
 
- const visibleDays=useMemo(()=>days.filter(d=>!routeFilter||(`${d.city} ${d.country} ${d.title} ${d.activities.map(a=>a.title).join(' ')}`).toLowerCase().includes(routeFilter.toLowerCase())),[routeFilter]);
+type ScheduledExtra = {
+  extraId: string;
+  date: string;
+  time: string;
+};
 
- return <div className="app-shell">
-  <div className="ambient a1"/><div className="ambient a2"/>
-  <header className="topbar">
-    <div><span className="eyebrow">CENTRAL OPERACIONAL</span><h1>Europa <i>2026</i></h1></div>
-    <button className="quick-add" onClick={()=>setExpenseOpen(true)}><Plus size={18}/><span>Gasto</span></button>
-  </header>
+type CurrencyTotals = Partial<Record<Currency, number>>;
 
-  <main>
-   {tab==='home'&&<Home daysUntil={daysUntil} day={tripDay} spent={spentUSD} budget={totalBudget} checklistPct={checklistPct} nextUnpaid={nextUnpaid} setTab={setTab}/>} 
-   {tab==='route'&&<RouteView filter={routeFilter} setFilter={setRouteFilter} visibleDays={visibleDays}/>} 
-   {tab==='map'&&<section className="page"><PageTitle kicker="GEOGRAFIA" title="Mapa da viagem" subtitle="Pins verificados + acesso direto ao Google Maps."/><MapView/><PlaceDirectory/></section>}
-   {tab==='money'&&<MoneyView expenses={expenses} setExpenses={setExpenses} openAdd={()=>setExpenseOpen(true)} budget={totalBudget}/>} 
-   {tab==='vault'&&<Vault docs={docs} setDocs={setDocs} openAdd={()=>setDocOpen(true)}/>} 
-   {tab==='more'&&<More check={check} setCheck={setCheck}/>} 
-  </main>
+function usePersisted<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => load(key, initial));
 
-  <nav className="bottom-nav">
-   <Nav active={tab==='home'} icon={<Sparkles/>} label="Hoje" onClick={()=>setTab('home')}/>
-   <Nav active={tab==='route'} icon={<CalendarDays/>} label="Roteiro" onClick={()=>setTab('route')}/>
-   <Nav active={tab==='map'} icon={<MapPinned/>} label="Mapa" onClick={()=>setTab('map')}/>
-   <Nav active={tab==='money'} icon={<WalletCards/>} label="Caixa" onClick={()=>setTab('money')}/>
-   <Nav active={tab==='vault'} icon={<FolderLock/>} label="Cofre" onClick={()=>setTab('vault')}/>
-   <Nav active={tab==='more'} icon={<CircleCheckBig/>} label="Ops" onClick={()=>setTab('more')}/>
-  </nav>
+  useEffect(() => {
+    save(key, value);
+  }, [key, value]);
 
-  <ExpenseDialog open={expenseOpen} onClose={()=>setExpenseOpen(false)} onAdd={e=>setExpenses([e,...expenses])}/>
-  <DocumentDialog open={docOpen} onClose={()=>setDocOpen(false)} onAdd={d=>setDocs([d,...docs])}/>
- </div>
+  return [value, setValue] as const;
 }
 
-function Home({daysUntil,day,spent,budget,checklistPct,nextUnpaid,setTab}:any){
- const place=day.activities.map((a:any)=>places.find(p=>p.id===a.placeId)).find(Boolean);
- return <section className="page home-page">
-  <div className="hero-card">
-   <div className="hero-copy"><span className="pill">{daysUntil>0?`${daysUntil} dias para embarcar`:'viagem em curso'}</span><h2>Uma viagem inteira<br/><em>na palma da mão.</em></h2><p>Roteiro, caixa, documentos, mapas e decisões críticas em um único lugar.</p></div>
-   <div className="hero-photo"><PlaceImage title={day.heroWiki} label={day.city}/><div className="hero-date">17 SET <span>→</span> 02 OUT</div></div>
-  </div>
-  <div className="kpi-grid">
-   <Kpi label="Caixa planejado" value={`${Math.max(0,budget-spent).toFixed(0)} USD`} sub={`${spent.toFixed(0)} USD lançados`} icon={<BadgeDollarSign/>}/>
-   <Kpi label="Preparação" value={`${checklistPct}%`} sub="checklist concluído" icon={<CircleCheckBig/>}/>
-   <Kpi label="Roteiro" value="16 dias" sub="5 países + Brasil" icon={<Route/>}/>
-  </div>
-  <div className="section-head"><div><span className="eyebrow">PRÓXIMO BLOCO</span><h3>{brDate(day.date)} • {day.city}</h3></div><button onClick={()=>setTab('route')}>Ver tudo <ChevronRight size={16}/></button></div>
-  <div className="timeline-card">
-   <div className="timeline-side"><div className="date-badge"><b>{day.date.slice(8)}</b><span>{new Date(day.date+'T12:00').toLocaleDateString('pt-BR',{month:'short'}).toUpperCase()}</span></div><div className="line"/></div>
-   <div className="timeline-list">{day.activities.slice(0,4).map((a:any)=><ActivityRow key={a.id} a={a}/>)}</div>
-  </div>
-  <div className="ops-grid">
-   <div className="ops-card warn"><div><span className="eyebrow">PENDÊNCIA FINANCEIRA</span><h3>{nextUnpaid?.title||'Sem pendências críticas'}</h3><p>{nextUnpaid?.amount?`${money(nextUnpaid.amount,nextUnpaid.currency)} • ${nextUnpaid.note||''}`:'Tudo sob controle.'}</p></div><AlertTriangle/></div>
-   <div className="ops-card"><div><span className="eyebrow">CAIXA FINAL PLANEJADO</span><h3>€ 2.400 + US$ 3.800</h3><p>Considerando a compra planejada de €1.200 + US$1.000 para otimizar cashback.</p></div><WalletCards/></div>
-  </div>
- </section>
+function getInitialDate() {
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (days.some((day) => day.date === today)) return today;
+  if (today < days[0].date) return days[0].date;
+  return days[days.length - 1].date;
 }
 
-function RouteView({filter,setFilter,visibleDays}:{filter:string;setFilter:(x:string)=>void;visibleDays:typeof days}){
- return <section className="page"><PageTitle kicker="ROTEIRO MESTRE" title="16 dias, sem ruído" subtitle="Compromissos confirmados aparecem primeiro. Flexíveis ficam visualmente separados."/>
-  <div className="search"><Search size={18}/><input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Buscar cidade, restaurante, atração..."/>{filter&&<button onClick={()=>setFilter('')}><X size={16}/></button>}</div>
-  <div className="route-stack">{visibleDays.map((d,i)=><DayCard key={d.date} day={d} index={i}/>)}</div>
- </section>
-}
-function DayCard({day,index}:{day:typeof days[number];index:number}){
- return <article className="day-card">
-  <div className="day-visual"><PlaceImage title={day.heroWiki} label={day.city}/><div className="day-number">D{String(index+1).padStart(2,'0')}</div><div className="day-overlay"><span>{brDate(day.date)}</span><h3>{day.city}</h3><p>{day.title}</p></div></div>
-  <div className="day-body">{day.hotel&&<div className="hotel-chip">◌ {day.hotel}</div>}{day.activities.map(a=><ActivityRow key={a.id} a={a}/>)}</div>
- </article>
-}
-function ActivityRow({a}:{a:any}){
- const p=places.find(x=>x.id===a.placeId); return <div className={`activity ${a.status}`}>
-  <div className="activity-time">{a.time||'•'}</div><div className="activity-icon">{activityIcon(a.category)}</div>
-  <div className="activity-main"><div className="activity-title"><b>{a.title}</b>{a.status==='confirmado'&&<span className="confirmed">confirmado</span>}{a.status==='lembrete'&&<span className="reminder">lembrete</span>}</div><p>{a.note||p?.address||a.category}</p>{a.amount&&<span className="amount-chip">{money(a.amount,a.currency)}</span>}</div>
-  {p&&<a className="map-link" href={googleMaps(p.name,p.address,p.lat,p.lng)} target="_blank" rel="noreferrer" aria-label="Abrir mapa"><MapPin size={17}/></a>}
- </div>
+function placeFor(activity: Activity) {
+  if (!activity.placeId) return undefined;
+  return places.find((place) => place.id === activity.placeId);
 }
 
-function MoneyView({expenses,setExpenses,openAdd,budget}:{expenses:Expense[];setExpenses:(e:Expense[])=>void;openAdd:()=>void;budget:number}){
- const spent=expenses.reduce((s,e)=>s+toUSD(e.amount,e.currency),0);
- const actualEUR=1200, actualUSD=2800, plannedEUR=1200, plannedUSD=1000;
- return <section className="page"><PageTitle kicker="CAIXA ÚNICO" title="Dinheiro sem surpresa" subtitle="Saldo atual, compra planejada e gastos reais no mesmo painel."/>
-  <div className="money-hero"><div><span className="eyebrow">POSIÇÃO APÓS COMPRAS PLANEJADAS</span><h2>€ {(actualEUR+plannedEUR).toLocaleString('pt-BR')} <small>+</small> US$ {(actualUSD+plannedUSD).toLocaleString('pt-BR')}</h2><p>Hoje: €1.200 em espécie + US$2.800 Nomad. Planejado: +€1.200 e +US$1.000.</p></div><WalletCards size={38}/></div>
-  <div className="progress-card"><div className="progress-head"><span>Orçamento variável de referência</span><b>{spent.toFixed(0)} / {budget.toFixed(0)} USD</b></div><div className="progress"><i style={{width:`${Math.min(100,spent/budget*100)}%`}}/></div><small>Gastos lançados no aplicativo reduzem este saldo em tempo real.</small></div>
-  <div className="wallet-grid">{wallets.map(w=><div className={`wallet-card ${w.planned?'planned':''}`} key={w.id}><span>{w.planned?'PLANEJADO':'DISPONÍVEL'}</span><h3>{money(w.balance,w.currency)}</h3><p>{w.name}</p><small>{w.note}</small></div>)}</div>
-  <div className="section-head"><div><span className="eyebrow">LANÇAMENTOS</span><h3>Gastos da viagem</h3></div><button className="primary-mini" onClick={openAdd}><Plus size={16}/> Novo gasto</button></div>
-  {expenses.length===0?<Empty icon={<WalletCards/>} title="Nenhum gasto lançado" text="O primeiro lançamento já atualiza o painel e fica salvo neste dispositivo."/>:<div className="expense-list">{expenses.map(e=><div className="expense-row" key={e.id}><div><b>{e.description}</b><span>{e.city} • {e.date.split('-').reverse().join('/')} • {e.category}</span></div><div className="expense-value"><b>{money(e.amount,e.currency)}</b><span>≈ US$ {toUSD(e.amount,e.currency).toFixed(0)}</span></div><button onClick={()=>setExpenses(expenses.filter(x=>x.id!==e.id))}><Trash2 size={16}/></button></div>)}</div>}
- </section>
+function firstMinutes(time?: string) {
+  if (!time) return undefined;
+  const match = time.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return undefined;
+  return Number(match[1]) * 60 + Number(match[2]);
 }
 
-function ExpenseDialog({open,onClose,onAdd}:{open:boolean;onClose:()=>void;onAdd:(x:Expense)=>void}){
- const [form,setForm]=useState({date:new Date().toISOString().slice(0,10),city:'',description:'',category:'Alimentação',currency:'EUR' as Currency,amount:'',wallet:'eurcash',note:''});
- function submit(e:React.FormEvent){e.preventDefault();if(!form.description||!form.amount)return;onAdd({id:crypto.randomUUID(),...form,amount:Number(form.amount)});setForm({...form,description:'',amount:'',note:''});onClose();}
- return <Dialog open={open} onClose={onClose} title="Incluir gasto"><form onSubmit={submit} className="form-grid">
-  <label>Data<input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})}/></label>
-  <label>Cidade<input value={form.city} onChange={e=>setForm({...form,city:e.target.value})} placeholder="Ex.: Copenhague"/></label>
-  <label className="full">Descrição<input autoFocus value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Ex.: jantar no Tivoli"/></label>
-  <label>Categoria<select value={form.category} onChange={e=>setForm({...form,category:e.target.value})}><option>Alimentação</option><option>Transporte</option><option>Atração</option><option>Compras</option><option>Hotel</option><option>Outros</option></select></label>
-  <label>Moeda<select value={form.currency} onChange={e=>setForm({...form,currency:e.target.value as Currency})}><option>EUR</option><option>USD</option><option>DKK</option><option>CHF</option><option>BRL</option></select></label>
-  <label>Valor<input inputMode="decimal" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value.replace(',','.')})} placeholder="0,00"/></label>
-  <label>Carteira<select value={form.wallet} onChange={e=>setForm({...form,wallet:e.target.value})}><option value="eurcash">Euro físico</option><option value="usdnomad">Nomad USD</option></select></label>
-  <label className="full">Observação<textarea value={form.note} onChange={e=>setForm({...form,note:e.target.value})} rows={3}/></label>
-  <div className="form-actions full"><button type="button" className="ghost" onClick={onClose}>Cancelar</button><button className="primary">Salvar gasto</button></div>
- </form></Dialog>
+function buildScheduledActivity(extra: ExtraItem, scheduled: ScheduledExtra): Activity {
+  return {
+    id: `scheduled-${extra.id}`,
+    date: scheduled.date,
+    time: scheduled.time,
+    title: extra.title,
+    category: extra.category,
+    city: extra.city,
+    placeId: extra.placeId,
+    status: 'extra',
+    note: extra.note,
+  };
 }
 
-function Vault({docs,setDocs,openAdd}:{docs:Doc[];setDocs:(d:Doc[])=>void;openAdd:()=>void}){
- async function openDoc(d:Doc){if(!d.stored)return;const f=await getFile(d.id);if(!f)return;const u=URL.createObjectURL(f);window.open(u,'_blank');setTimeout(()=>URL.revokeObjectURL(u),60000)}
- async function remove(d:Doc){if(d.stored)await deleteFile(d.id);setDocs(docs.filter(x=>x.id!==d.id))}
- return <section className="page"><PageTitle kicker="COFRE LOCAL" title="Documentos, do seu jeito" subtitle="Você escolhe o nome visível antes de salvar. O nome original fica apenas como referência."/>
-  <div className="privacy-note"><FolderLock/><div><b>Privado por padrão</b><span>Arquivos enviados aqui ficam no IndexedDB deste navegador. Não inclua PDFs sensíveis no repositório GitHub.</span></div></div>
-  <button className="upload-hero" onClick={openAdd}><FileUp size={28}/><div><b>Adicionar documento</b><span>Nomeie, categorize e associe ao viajante antes da carga.</span></div><Plus/></button>
-  <div className="doc-list">{docs.map(d=><div className="doc-row" key={d.id}><div className="doc-icon">PDF</div><div className="doc-copy"><b>{d.name}</b><span>{d.type} • {d.traveler}</span>{d.original&&<small>arquivo original: {d.original}</small>}</div><div className="doc-actions">{d.stored&&<button onClick={()=>openDoc(d)} title="Abrir"><ExternalLink size={17}/></button>}{d.stored&&<button onClick={async()=>{const f=await getFile(d.id);if(!f)return;const u=URL.createObjectURL(f);const a=document.createElement('a');a.href=u;a.download=f.name;a.click();URL.revokeObjectURL(u)}} title="Baixar"><Download size={17}/></button>}<button onClick={()=>remove(d)} title="Excluir"><Trash2 size={17}/></button></div></div>)}</div>
- </section>
-}
-function DocumentDialog({open,onClose,onAdd}:{open:boolean;onClose:()=>void;onAdd:(d:Doc)=>void}){
- const [file,setFile]=useState<File>(); const [name,setName]=useState(''); const [type,setType]=useState('Reserva'); const [traveler,setTraveler]=useState('Família'); const [busy,setBusy]=useState(false);
- async function submit(e:React.FormEvent){e.preventDefault();if(!file||!name)return;setBusy(true);const id=crypto.randomUUID();await putFile(id,file);onAdd({id,name,type,traveler,original:file.name,stored:true,createdAt:new Date().toISOString()});setBusy(false);setFile(undefined);setName('');onClose();}
- return <Dialog open={open} onClose={onClose} title="Adicionar documento"><form onSubmit={submit} className="form-grid">
-  <label className="full upload-field"><span>1. Escolha o arquivo</span><input type="file" accept="application/pdf,image/*" onChange={e=>{const f=e.target.files?.[0];setFile(f);if(f&&!name)setName(f.name.replace(/\.[^.]+$/,''))}}/>{file&&<small>{file.name} • {(file.size/1024/1024).toFixed(1)} MB</small>}</label>
-  <label className="full"><span>2. Nome que aparecerá no app</span><input value={name} onChange={e=>setName(e.target.value)} placeholder="Ex.: Seguro viagem • Filipe"/><small>Este nome é independente do nome original do arquivo.</small></label>
-  <label>Tipo<select value={type} onChange={e=>setType(e.target.value)}><option>Reserva</option><option>Seguro viagem</option><option>Elegibilidade</option><option>Ingresso</option><option>Passaporte</option><option>Receita</option><option>Outros</option></select></label>
-  <label>Viajante<select value={traveler} onChange={e=>setTraveler(e.target.value)}><option>Família</option>{trip.travelers.map(x=><option key={x}>{x}</option>)}</select></label>
-  <div className="form-actions full"><button type="button" className="ghost" onClick={onClose}>Cancelar</button><button className="primary" disabled={!file||!name||busy}>{busy?'Salvando...':'Salvar no cofre'}</button></div>
- </form></Dialog>
+function mergeScheduledExtras(day: Day, scheduledExtras: ScheduledExtra[]) {
+  const scheduledForDay = scheduledExtras
+    .filter((item) => item.date === day.date)
+    .map((item) => {
+      const extra = (extrasByDate[item.date] || []).find(
+        (candidate) => candidate.id === item.extraId,
+      );
+      return extra ? buildScheduledActivity(extra, item) : undefined;
+    })
+    .filter(Boolean) as Activity[];
+
+  const merged = [...day.activities];
+
+  scheduledForDay
+    .sort((a, b) => (firstMinutes(a.time) || 9999) - (firstMinutes(b.time) || 9999))
+    .forEach((extra) => {
+      const extraMinutes = firstMinutes(extra.time);
+
+      if (extraMinutes === undefined) {
+        merged.push(extra);
+        return;
+      }
+
+      const laterTimedIndex = merged.findIndex((activity) => {
+        const activityMinutes = firstMinutes(activity.time);
+        return activityMinutes !== undefined && activityMinutes > extraMinutes;
+      });
+
+      if (laterTimedIndex >= 0) {
+        merged.splice(laterTimedIndex, 0, extra);
+        return;
+      }
+
+      const firstTrailingOpenIndex = merged.findIndex(
+        (activity) => !activity.time && activity.status === 'aberto',
+      );
+
+      if (firstTrailingOpenIndex >= 0) {
+        merged.splice(firstTrailingOpenIndex, 0, extra);
+      } else {
+        merged.push(extra);
+      }
+    });
+
+  return merged;
 }
 
-function More({check,setCheck}:{check:Record<string,boolean>;setCheck:(x:Record<string,boolean>)=>void}){
- return <section className="page"><PageTitle kicker="OPERAÇÕES" title="O que não pode falhar" subtitle="Checklist, alertas e contatos de emergência no mesmo lugar."/>
-  <div className="ops-card critical"><div><span className="eyebrow">LEMBRETE CRÍTICO</span><h3>28/09 • contatar vinícola em Fläsch</h3><p>A vinícola pediu contato dois dias antes. Degustação em 30/09: CHF 25 por pessoa, Rafaella + Maria Esther.</p></div><AlertTriangle/></div>
-  <div className="section-head"><div><span className="eyebrow">CHECKLIST</span><h3>Pré-embarque</h3></div><span>{Object.values(check).filter(Boolean).length}/{seedChecklist.length}</span></div>
-  <div className="check-list">{seedChecklist.map(c=><label key={c.id} className={check[c.id]?'done':''}><input type="checkbox" checked={!!check[c.id]} onChange={e=>setCheck({...check,[c.id]:e.target.checked})}/><span className="fake-check">✓</span><div><b>{c.label}</b><small>{c.category} • prioridade {c.priority}</small></div></label>)}</div>
-  <div className="section-head"><div><span className="eyebrow">EMERGÊNCIA</span><h3>Assistência Mastercard / AIG</h3></div><Phone size={18}/></div>
-  <div className="phone-grid">{insurancePhones.map(([country,phone])=><a key={country} href={`tel:${phone.replace(/[^+\d]/g,'')}`}><span>{country}</span><b>{phone}</b></a>)}</div>
-  <div className="source-note">Os números foram importados dos certificados/seguros da base. Confirme as condições do benefício antes do embarque.</div>
- </section>
+function displayDay(
+  day: Day,
+  completed: Record<string, boolean>,
+  scheduledExtras: ScheduledExtra[],
+): Day {
+  return {
+    ...day,
+    activities: mergeScheduledExtras(day, scheduledExtras).map((activity) => ({
+      ...activity,
+      completed: completed[activity.id] === true,
+    })),
+  };
 }
 
-function PlaceDirectory(){return <div className="place-directory">{places.map(p=><a key={p.id} href={googleMaps(p.name,p.address,p.lat,p.lng)} target="_blank" rel="noreferrer"><div><b>{p.name}</b><span>{p.city} • {p.address||'Busca nominal no Maps'}</span></div><div className="verified">{p.verified?'GPS ✓':'BUSCA'} <ExternalLink size={13}/></div></a>)}</div>}
-function PageTitle({kicker,title,subtitle}:{kicker:string;title:string;subtitle:string}){return <div className="page-title"><span className="eyebrow">{kicker}</span><h2>{title}</h2><p>{subtitle}</p></div>}
-function Kpi({label,value,sub,icon}:{label:string;value:string;sub:string;icon:any}){return <div className="kpi"><div className="kpi-icon">{icon}</div><span>{label}</span><b>{value}</b><small>{sub}</small></div>}
-function Nav({active,icon,label,onClick}:{active:boolean;icon:any;label:string;onClick:()=>void}){return <button className={active?'active':''} onClick={onClick}>{icon}<span>{label}</span></button>}
-function Empty({icon,title,text}:{icon:any;title:string;text:string}){return <div className="empty"><div>{icon}</div><b>{title}</b><span>{text}</span></div>}
-function activityIcon(category:string){if(/Voo/.test(category))return <Plane size={16}/>;if(/Carro|Transporte|Rota/.test(category))return <Car size={16}/>;if(/Aliment|Restaurante|Vinho/.test(category))return <Utensils size={16}/>;return <MapPin size={16}/>}
-function toUSD(v:number,c:Currency){if(c==='USD')return v;if(c==='EUR')return v*trip.rates.EUR_USD;if(c==='DKK')return v/trip.rates.DKK_USD;if(c==='CHF')return v/trip.rates.CHF_USD;if(c==='BRL')return v/5.5;return v}
+function statusLabel(status: Activity['status']) {
+  switch (status) {
+    case 'fixo':
+    case 'confirmado':
+      return 'FIXO';
+    case 'definido':
+    case 'planejado':
+      return 'DEFINIDO';
+    case 'aberto':
+      return 'ABERTO';
+    case 'extra':
+      return 'EXTRA';
+    case 'lembrete':
+      return 'LEMBRETE';
+    default:
+      return String(status).toUpperCase();
+  }
+}
+
+function currencyForDate(date: string): Currency {
+  if (date <= '2026-09-21') return 'DKK';
+  if (date <= '2026-09-29') return 'EUR';
+  return 'CHF';
+}
+
+function walletForCurrency(currency: Currency): WalletId {
+  if (currency === 'EUR') return 'eurcash';
+  return 'usdnomad';
+}
+
+function addTotal(totals: CurrencyTotals, currency: Currency, amount: number) {
+  totals[currency] = (totals[currency] || 0) + amount;
+}
+
+function totalsFromActivities(activities: Activity[], completed?: Record<string, boolean>) {
+  const totals: CurrencyTotals = {};
+
+  activities.forEach((activity) => {
+    if (completed?.[activity.id]) return;
+    if (activity.paid === 'sim') return;
+    if (!activity.estimatedAmount || !activity.estimatedCurrency) return;
+    addTotal(totals, activity.estimatedCurrency, activity.estimatedAmount);
+  });
+
+  return totals;
+}
+
+function totalsFromExpenses(expenses: Expense[]) {
+  const totals: CurrencyTotals = {};
+  expenses.forEach((expense) => addTotal(totals, expense.currency, expense.amount));
+  return totals;
+}
+
+function formatTotals(totals: CurrencyTotals) {
+  const order: Currency[] = ['EUR', 'DKK', 'CHF', 'USD', 'BRL'];
+  const parts = order
+    .filter((currency) => (totals[currency] || 0) > 0)
+    .map((currency) => money(totals[currency] || 0, currency));
+
+  return parts.length ? parts.join(' + ') : 'Sem valor previsto';
+}
+
+function debitOfExpense(expense: Expense, rates: ExchangeRates) {
+  if (Number.isFinite(expense.debitAmount)) return expense.debitAmount;
+  return walletDebitAmount(expense.amount, expense.currency, rates);
+}
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>('today');
+  const [selectedDate, setSelectedDate] = useState(getInitialDate);
+  const [expenses, setExpenses] = usePersisted<Expense[]>('europa-expenses-v2', []);
+  const [completed, setCompleted] = usePersisted<Record<string, boolean>>(
+    'europa-completed-v2',
+    {},
+  );
+  const [scheduledExtras, setScheduledExtras] = usePersisted<ScheduledExtra[]>(
+    'europa-scheduled-extras-v2',
+    [],
+  );
+  const [check, setCheck] = usePersisted<Record<string, boolean>>(
+    'europa-checklist-v2',
+    {},
+  );
+  const [docs, setDocs] = usePersisted<Doc[]>('europa-documents-v2', seedDocuments);
+  const [rates, setRates] = usePersisted<ExchangeRates>('europa-rates-v2', fallbackRates);
+
+  const [expenseOpen, setExpenseOpen] = useState(false);
+  const [expenseActivity, setExpenseActivity] = useState<Activity | undefined>();
+  const [docOpen, setDocOpen] = useState(false);
+  const [docSuggestion, setDocSuggestion] = useState<DocumentSuggestion | undefined>();
+  const [docReplace, setDocReplace] = useState<Doc | undefined>();
+  const [extraOpen, setExtraOpen] = useState(false);
+  const [extraToSchedule, setExtraToSchedule] = useState<ExtraItem | undefined>();
+
+  const baseSelectedDay = days.find((day) => day.date === selectedDate) || days[0];
+
+  const selectedDay = useMemo(
+    () => displayDay(baseSelectedDay, completed, scheduledExtras),
+    [baseSelectedDay, completed, scheduledExtras],
+  );
+
+  const openExpense = (activity?: Activity) => {
+    setExpenseActivity(activity);
+    setExpenseOpen(true);
+  };
+
+  const toggleCompleted = (activityId: string) => {
+    setCompleted({
+      ...completed,
+      [activityId]: !completed[activityId],
+    });
+  };
+
+  const scheduleExtra = (extraId: string, time: string) => {
+    const withoutDuplicate = scheduledExtras.filter(
+      (item) => !(item.date === selectedDate && item.extraId === extraId),
+    );
+
+    setScheduledExtras([
+      ...withoutDuplicate,
+      { extraId, date: selectedDate, time },
+    ]);
+  };
+
+  const removeScheduledExtra = (activityId: string) => {
+    const extraId = activityId.replace(/^scheduled-/, '');
+    setScheduledExtras(
+      scheduledExtras.filter(
+        (item) => !(item.date === selectedDate && item.extraId === extraId),
+      ),
+    );
+  };
+
+  return (
+    <div className="app-shell">
+      <div className="ambient a1" />
+      <div className="ambient a2" />
+
+      <header className="topbar compact-topbar">
+        <div>
+          <span className="eyebrow">EUROPA 2026</span>
+          <h1>Modo <i>viagem</i></h1>
+        </div>
+      </header>
+
+      <main>
+        {tab === 'today' && (
+          <TodayView
+            selectedDay={selectedDay}
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
+            expenses={expenses}
+            completed={completed}
+            scheduledExtras={scheduledExtras}
+            docs={docs}
+            onExpense={openExpense}
+            onToggleCompleted={toggleCompleted}
+            onScheduleExtra={(extra) => {
+              setExtraToSchedule(extra);
+              setExtraOpen(true);
+            }}
+            onRemoveExtra={removeScheduledExtra}
+          />
+        )}
+
+        {tab === 'money' && (
+          <MoneyView
+            expenses={expenses}
+            setExpenses={setExpenses}
+            completed={completed}
+            rates={rates}
+            setRates={setRates}
+            openAdd={() => openExpense()}
+          />
+        )}
+
+        {tab === 'documents' && (
+          <DocumentsView
+            docs={docs}
+            setDocs={setDocs}
+            openSuggestion={(suggestion, existing) => {
+              setDocSuggestion(suggestion);
+              setDocReplace(existing);
+              setDocOpen(true);
+            }}
+            openOther={(existing) => {
+              setDocSuggestion(undefined);
+              setDocReplace(existing);
+              setDocOpen(true);
+            }}
+          />
+        )}
+
+        {tab === 'ops' && <OpsView check={check} setCheck={setCheck} />}
+      </main>
+
+      <nav className="bottom-nav four-tabs">
+        <Nav
+          active={tab === 'today'}
+          icon={<Clock3 />}
+          label="Hoje"
+          onClick={() => setTab('today')}
+        />
+        <Nav
+          active={tab === 'money'}
+          icon={<WalletCards />}
+          label="Caixa"
+          onClick={() => setTab('money')}
+        />
+        <Nav
+          active={tab === 'documents'}
+          icon={<Files />}
+          label="Documentos"
+          onClick={() => setTab('documents')}
+        />
+        <Nav
+          active={tab === 'ops'}
+          icon={<CircleCheckBig />}
+          label="Ops"
+          onClick={() => setTab('ops')}
+        />
+      </nav>
+
+      <ExpenseDialog
+        open={expenseOpen}
+        activity={expenseActivity}
+        selectedDate={selectedDate}
+        rates={rates}
+        onClose={() => {
+          setExpenseOpen(false);
+          setExpenseActivity(undefined);
+        }}
+        onAdd={(expense) => setExpenses([expense, ...expenses])}
+      />
+
+      <DocumentDialog
+        open={docOpen}
+        suggestion={docSuggestion}
+        existing={docReplace}
+        onClose={() => {
+          setDocOpen(false);
+          setDocSuggestion(undefined);
+          setDocReplace(undefined);
+        }}
+        onSave={(savedDocs) => {
+          if (docReplace) {
+            const replacement = savedDocs[0];
+            if (!replacement) return;
+            setDocs(
+              docs.map((item) => (item.id === docReplace.id ? replacement : item)),
+            );
+          } else {
+            setDocs([...savedDocs, ...docs]);
+          }
+        }}
+      />
+
+      <ScheduleExtraDialog
+        open={extraOpen}
+        extra={extraToSchedule}
+        onClose={() => {
+          setExtraOpen(false);
+          setExtraToSchedule(undefined);
+        }}
+        onSchedule={(time) => {
+          if (!extraToSchedule) return;
+          scheduleExtra(extraToSchedule.id, time);
+          setExtraOpen(false);
+          setExtraToSchedule(undefined);
+        }}
+      />
+    </div>
+  );
+}
+
+function TodayView({
+  selectedDay,
+  selectedDate,
+  setSelectedDate,
+  expenses,
+  completed,
+  scheduledExtras,
+  docs,
+  onExpense,
+  onToggleCompleted,
+  onScheduleExtra,
+  onRemoveExtra,
+}: {
+  selectedDay: Day;
+  selectedDate: string;
+  setSelectedDate: (date: string) => void;
+  expenses: Expense[];
+  completed: Record<string, boolean>;
+  scheduledExtras: ScheduledExtra[];
+  docs: Doc[];
+  onExpense: (activity?: Activity) => void;
+  onToggleCompleted: (activityId: string) => void;
+  onScheduleExtra: (extra: ExtraItem) => void;
+  onRemoveExtra: (activityId: string) => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const isActualToday = today === selectedDate;
+  const beforeTrip = today < days[0].date;
+
+  const nextActivity = selectedDay.activities.find((activity) => !activity.completed);
+
+  const dayExpenses = expenses.filter((expense) => expense.date === selectedDate);
+  const dayEstimate = totalsFromActivities(selectedDay.activities);
+  const dayActual = totalsFromExpenses(dayExpenses);
+
+  const allExtras = extrasByDate[selectedDate] || [];
+  const scheduledIds = new Set(
+    scheduledExtras
+      .filter((item) => item.date === selectedDate)
+      .map((item) => item.extraId),
+  );
+  const availableExtras = allExtras.filter((extra) => !scheduledIds.has(extra.id));
+
+  return (
+    <section className="page today-page">
+      <div className="today-heading">
+        <div>
+          <span className="eyebrow">
+            {isActualToday ? 'HOJE' : beforeTrip ? 'PRÓXIMO DIA' : 'DIA SELECIONADO'}
+          </span>
+          <h2>{selectedDay.city}</h2>
+          <p>{brFullDate(selectedDate)}</p>
+        </div>
+
+        {selectedDay.hotel && (
+          <div className="today-hotel">
+            <span>BASE</span>
+            <b>{selectedDay.hotel}</b>
+          </div>
+        )}
+      </div>
+
+      <DayStrip selectedDate={selectedDate} onSelect={setSelectedDate} />
+
+      <div className="today-map-card">
+        <div className="section-head compact-section-head">
+          <div>
+            <span className="eyebrow">MAPA DO DIA</span>
+            <h3>Todos os pontos em ordem</h3>
+          </div>
+        </div>
+        <MapView day={selectedDay} compact />
+      </div>
+
+      {nextActivity && (
+        <div className="next-card">
+          <div className="next-icon">
+            <Navigation size={20} />
+          </div>
+          <div className="next-main">
+            <span className="eyebrow">PRÓXIMO</span>
+            <h3>{nextActivity.title}</h3>
+            <p>{nextActivity.time || nextActivity.category}</p>
+          </div>
+          <ChevronRight size={20} />
+        </div>
+      )}
+
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">SEQUÊNCIA</span>
+          <h3>{selectedDay.title}</h3>
+        </div>
+      </div>
+
+      <div className="today-timeline">
+        {selectedDay.activities.map((activity) => (
+          <TravelActivityCard
+            key={activity.id}
+            activity={activity}
+            expenses={expenses.filter((expense) => expense.activityId === activity.id)}
+            docs={docs}
+            onExpense={() => onExpense(activity)}
+            onToggleCompleted={() => onToggleCompleted(activity.id)}
+            onRemoveExtra={
+              activity.status === 'extra' && activity.id.startsWith('scheduled-')
+                ? () => onRemoveExtra(activity.id)
+                : undefined
+            }
+          />
+        ))}
+      </div>
+
+      <div className="daily-money-card">
+        <div>
+          <span>Previsto do dia</span>
+          <b>{formatTotals(dayEstimate)}</b>
+        </div>
+        <div>
+          <span>Gasto lançado</span>
+          <b>{formatTotals(dayActual)}</b>
+        </div>
+      </div>
+
+      {availableExtras.length > 0 && (
+        <section className="extras-section">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">SE AINDA HOUVER TEMPO</span>
+              <h3>Extras deste dia</h3>
+            </div>
+          </div>
+
+          <div className="extras-list">
+            {availableExtras.map((extra) => {
+              const place = extra.placeId
+                ? places.find((candidate) => candidate.id === extra.placeId)
+                : undefined;
+
+              return (
+                <div className="extra-card" key={extra.id}>
+                  <div>
+                    <span>{extra.category}</span>
+                    <b>{extra.title}</b>
+                    {extra.note && <p>{extra.note}</p>}
+                  </div>
+
+                  <div className="extra-actions">
+                    {place && (
+                      <a
+                        href={googleMapsDirections(
+                          place.name,
+                          place.address,
+                          place.lat,
+                          place.lng,
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="ghost-mini"
+                      >
+                        <MapPin size={15} />
+                      </a>
+                    )}
+
+                    <button className="primary-mini" onClick={() => onScheduleExtra(extra)}>
+                      <Plus size={15} />
+                      Adicionar ao dia
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </section>
+  );
+}
+
+function DayStrip({
+  selectedDate,
+  onSelect,
+}: {
+  selectedDate: string;
+  onSelect: (date: string) => void;
+}) {
+  return (
+    <div className="day-strip" aria-label="Dias da viagem">
+      {days.map((day, index) => {
+        const date = new Date(`${day.date}T12:00:00`);
+        const dayNumber = String(date.getDate()).padStart(2, '0');
+        const month = date
+          .toLocaleDateString('pt-BR', { month: 'short' })
+          .replace('.', '')
+          .toUpperCase();
+
+        return (
+          <button
+            key={day.date}
+            className={selectedDate === day.date ? 'active' : ''}
+            onClick={() => onSelect(day.date)}
+          >
+            <small>D{String(index + 1).padStart(2, '0')}</small>
+            <b>{dayNumber}</b>
+            <span>{month}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TravelActivityCard({
+  activity,
+  expenses,
+  docs,
+  onExpense,
+  onToggleCompleted,
+  onRemoveExtra,
+}: {
+  activity: Activity;
+  expenses: Expense[];
+  docs: Doc[];
+  onExpense: () => void;
+  onToggleCompleted: () => void;
+  onRemoveExtra?: () => void;
+}) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<Doc | undefined>();
+  const place = placeFor(activity);
+  const linkedSuggestionIds = activity.documentSuggestionIds || [];
+  const linkedDocs = docs.filter(
+    (doc) => doc.suggestionId && linkedSuggestionIds.includes(doc.suggestionId),
+  );
+  const hasDetails = Boolean(
+    activity.note ||
+    activity.people ||
+    place?.address ||
+    linkedDocs.length > 0
+  );
+  const realTotals = totalsFromExpenses(expenses);
+
+  const sameCurrencyActual = activity.estimatedCurrency
+    ? realTotals[activity.estimatedCurrency] || 0
+    : 0;
+
+  const variance =
+    activity.estimatedAmount && activity.estimatedCurrency && sameCurrencyActual > 0
+      ? activity.estimatedAmount - sameCurrencyActual
+      : undefined;
+
+  if (activity.completed) {
+    return (
+      <article className="travel-event completed">
+        <div className="event-time">{activity.time || '•'}</div>
+        <div className="event-complete-icon">
+          <Check size={16} />
+        </div>
+        <div className="event-main">
+          <div className="event-title-line">
+            <b>{activity.title}</b>
+            <span className="done-chip">concluído</span>
+          </div>
+        </div>
+        <button className="icon-btn small" onClick={onToggleCompleted} aria-label="Reabrir">
+          <RotateCcw size={16} />
+        </button>
+      </article>
+    );
+  }
+
+  return (
+    <article className={`travel-event status-${activity.status}`}>
+      <div className="event-time">{activity.time || '•'}</div>
+
+      <div className="event-main">
+        <div className="event-title-line">
+          <b>{activity.title}</b>
+          <span className={`status-chip ${activity.status}`}>{statusLabel(activity.status)}</span>
+          {activity.paid === 'sim' && <span className="paid-chip">PAGO</span>}
+          {activity.paid === 'parcial' && <span className="partial-chip">PARCIAL</span>}
+        </div>
+
+        <p className="event-subtitle">{activity.city} • {activity.category}</p>
+
+        {(activity.estimatedAmount || expenses.length > 0) && (
+          <div className="event-money-line">
+            {activity.estimatedAmount && activity.estimatedCurrency && (
+              <span>
+                Previsto <b>{money(activity.estimatedAmount, activity.estimatedCurrency)}</b>
+              </span>
+            )}
+
+            {expenses.length > 0 && (
+              <span>
+                Real <b>{formatTotals(realTotals)}</b>
+              </span>
+            )}
+
+            {variance !== undefined && variance !== 0 && (
+              <span className={variance > 0 ? 'saving' : 'over'}>
+                {variance > 0 ? '↓ economia ' : '↑ acima '}
+                <b>{money(Math.abs(variance), activity.estimatedCurrency!)}</b>
+              </span>
+            )}
+          </div>
+        )}
+
+        {detailsOpen && (
+          <div className="event-details">
+            {activity.people && <p><b>Pessoas:</b> {activity.people}</p>}
+            {activity.note && <p>{activity.note}</p>}
+            {place?.address && <p><b>Local:</b> {place.address}</p>}
+
+            {linkedDocs.length > 0 && (
+              <div className="event-documents">
+                <div className="event-documents-head">
+                  <Files size={15} />
+                  <b>Documentos</b>
+                </div>
+
+                <div className="event-document-list">
+                  {linkedDocs.map((doc) => (
+                    <div className="event-document-row" key={doc.id}>
+                      <div className="event-document-copy">
+                        <b>{doc.name}</b>
+                        {doc.original && <span>{doc.original}</span>}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="event-document-view"
+                        onClick={() => setPreviewDoc(doc)}
+                      >
+                        <Eye size={15} />
+                        Ver
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="event-actions">
+          {place && (
+            <a
+              href={googleMapsDirections(
+                place.name,
+                place.address,
+                place.lat,
+                place.lng,
+              )}
+              target="_blank"
+              rel="noreferrer"
+              className="event-action"
+            >
+              <Navigation size={15} />
+              Maps
+            </a>
+          )}
+
+          <button className="event-action" onClick={onExpense}>
+            <ReceiptText size={15} />
+            Gasto
+          </button>
+
+          {hasDetails && (
+            <button className="event-action" onClick={() => setDetailsOpen(!detailsOpen)}>
+              <ChevronRight size={15} />
+              {detailsOpen ? 'Fechar' : 'Detalhes'}
+            </button>
+          )}
+
+          <button className="event-action conclude" onClick={onToggleCompleted}>
+            <CheckCircle2 size={15} />
+            Concluir
+          </button>
+
+          {onRemoveExtra && (
+            <button className="event-action danger" onClick={onRemoveExtra}>
+              <Trash2 size={15} />
+              Remover do dia
+            </button>
+          )}
+        </div>
+      </div>
+
+      <DocumentPreviewDialog
+        doc={previewDoc}
+        onClose={() => setPreviewDoc(undefined)}
+      />
+    </article>
+  );
+}
+
+function MoneyView({
+  expenses,
+  setExpenses,
+  completed,
+  rates,
+  setRates,
+  openAdd,
+}: {
+  expenses: Expense[];
+  setExpenses: (expenses: Expense[]) => void;
+  completed: Record<string, boolean>;
+  rates: ExchangeRates;
+  setRates: (rates: ExchangeRates) => void;
+  openAdd: () => void;
+}) {
+  const balances = useMemo(() => {
+    const result: Record<WalletId, number> = {
+      eurcash: wallets.find((wallet) => wallet.id === 'eurcash')?.balance || 0,
+      eurnomad: wallets.find((wallet) => wallet.id === 'eurnomad')?.balance || 0,
+      usdnomad: wallets.find((wallet) => wallet.id === 'usdnomad')?.balance || 0,
+    };
+
+    expenses.forEach((expense) => {
+      if (!(expense.wallet in result)) return;
+      result[expense.wallet] -= debitOfExpense(expense, rates);
+    });
+
+    return result;
+  }, [expenses, rates]);
+
+  const pending = useMemo(
+    () => totalsFromActivities(days.flatMap((day) => day.activities), completed),
+    [completed],
+  );
+
+  const realByCity = useMemo(() => {
+    const grouped = new Map<string, Expense[]>();
+
+    expenses.forEach((expense) => {
+      const current = grouped.get(expense.city) || [];
+      current.push(expense);
+      grouped.set(expense.city, current);
+    });
+
+    return [...grouped.entries()];
+  }, [expenses]);
+
+  return (
+    <section className="page">
+      <PageTitle
+        kicker="CAIXA"
+        title="Dinheiro da viagem"
+        subtitle="O gasto lançado em cada evento baixa automaticamente da carteira escolhida."
+      />
+
+      <div className="wallet-grid">
+        {wallets.map((wallet) => {
+          const balance = balances[wallet.id];
+          const spent = wallet.balance - balance;
+
+          return (
+            <div className="wallet-card" key={wallet.id}>
+              <span>DISPONÍVEL</span>
+              <h3>{money(balance, wallet.currency)}</h3>
+              <p>{wallet.name}</p>
+              <small>
+                Inicial {money(wallet.balance, wallet.currency)} • usado {money(spent, wallet.currency)}
+              </small>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="cash-summary-grid">
+        <div className="cash-summary-card">
+          <span className="eyebrow">AINDA PREVISTO NO ROTEIRO</span>
+          <b>{formatTotals(pending)}</b>
+          <p>Estimativas dos eventos ainda não concluídos e ainda não pagos.</p>
+        </div>
+
+        <div className="cash-summary-card">
+          <span className="eyebrow">CONVERSÃO DKK / CHF</span>
+          <b>Nomad USD</b>
+          <p>O valor é lançado na moeda local e convertido para o débito em dólar.</p>
+        </div>
+      </div>
+
+      <section className="rate-card">
+        <div className="section-head compact-section-head">
+          <div>
+            <span className="eyebrow">COTAÇÕES USADAS</span>
+            <h3>Editáveis</h3>
+          </div>
+        </div>
+
+        <div className="rate-grid">
+          <label>
+            <span>1 EUR = USD</span>
+            <input
+              inputMode="decimal"
+              value={rates.EUR_USD}
+              onChange={(event) =>
+                setRates({
+                  ...rates,
+                  EUR_USD: Number(event.target.value.replace(',', '.')) || rates.EUR_USD,
+                })
+              }
+            />
+          </label>
+
+          <label>
+            <span>1 USD = DKK</span>
+            <input
+              inputMode="decimal"
+              value={rates.DKK_USD}
+              onChange={(event) =>
+                setRates({
+                  ...rates,
+                  DKK_USD: Number(event.target.value.replace(',', '.')) || rates.DKK_USD,
+                })
+              }
+            />
+          </label>
+
+          <label>
+            <span>1 USD = CHF</span>
+            <input
+              inputMode="decimal"
+              value={rates.CHF_USD}
+              onChange={(event) =>
+                setRates({
+                  ...rates,
+                  CHF_USD: Number(event.target.value.replace(',', '.')) || rates.CHF_USD,
+                })
+              }
+            />
+          </label>
+        </div>
+      </section>
+
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">LANÇAMENTOS</span>
+          <h3>Gastos reais</h3>
+        </div>
+        <button className="primary-mini" onClick={openAdd}>
+          <Plus size={16} />
+          Gasto esquecido
+        </button>
+      </div>
+
+      {expenses.length === 0 ? (
+        <Empty
+          icon={<WalletCards />}
+          title="Nenhum gasto lançado"
+          text="Durante a viagem, prefira lançar o gasto diretamente no evento."
+        />
+      ) : (
+        <div className="expense-list">
+          {expenses.map((expense) => (
+            <div className="expense-row" key={expense.id}>
+              <div>
+                <b>{expense.description}</b>
+                <span>
+                  {expense.city} • {expense.date.split('-').reverse().join('/')} • {expense.category}
+                </span>
+                {expense.currency !== expense.debitCurrency && (
+                  <small>
+                    {money(expense.amount, expense.currency)} → débito {money(expense.debitAmount, expense.debitCurrency)}
+                  </small>
+                )}
+              </div>
+
+              <div className="expense-value">
+                <b>{money(expense.amount, expense.currency)}</b>
+                <span>
+                  {wallets.find((wallet) => wallet.id === expense.wallet)?.name || expense.wallet}
+                </span>
+              </div>
+
+              <button
+                className="icon-btn small"
+                onClick={() => setExpenses(expenses.filter((item) => item.id !== expense.id))}
+                aria-label="Excluir gasto"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {realByCity.length > 0 && (
+        <section className="city-spend-section">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">USO POR CIDADE</span>
+              <h3>Gastos lançados</h3>
+            </div>
+          </div>
+
+          <div className="city-spend-list">
+            {realByCity.map(([city, cityExpenses]) => (
+              <div className="city-spend-row" key={city}>
+                <span>{city}</span>
+                <b>{formatTotals(totalsFromExpenses(cityExpenses))}</b>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </section>
+  );
+}
+
+function ExpenseDialog({
+  open,
+  activity,
+  selectedDate,
+  rates,
+  onClose,
+  onAdd,
+}: {
+  open: boolean;
+  activity?: Activity;
+  selectedDate: string;
+  rates: ExchangeRates;
+  onClose: () => void;
+  onAdd: (expense: Expense) => void;
+}) {
+  const defaultCurrency = activity?.estimatedCurrency || currencyForDate(activity?.date || selectedDate);
+
+  const [form, setForm] = useState({
+    date: activity?.date || selectedDate,
+    city: activity?.city || '',
+    description: activity?.title || '',
+    category: activity?.category || 'Alimentação',
+    currency: defaultCurrency as Currency,
+    amount: '',
+    wallet: walletForCurrency(defaultCurrency) as WalletId,
+    note: '',
+  });
+
+  useEffect(() => {
+    if (!open) return;
+
+    const currency = activity?.estimatedCurrency || currencyForDate(activity?.date || selectedDate);
+
+    setForm({
+      date: activity?.date || selectedDate,
+      city: activity?.city || '',
+      description: activity?.title || '',
+      category: activity?.category || 'Alimentação',
+      currency,
+      amount: '',
+      wallet: walletForCurrency(currency),
+      note: '',
+    });
+  }, [open, activity, selectedDate]);
+
+  const amount = Number(form.amount.replace(',', '.')) || 0;
+  const debitAmount = amount > 0 ? walletDebitAmount(amount, form.currency, rates) : 0;
+  const debitCurrency: 'EUR' | 'USD' = form.currency === 'EUR' ? 'EUR' : 'USD';
+
+  function changeCurrency(currency: Currency) {
+    setForm({
+      ...form,
+      currency,
+      wallet:
+        currency === 'EUR'
+          ? form.wallet === 'eurcash' || form.wallet === 'eurnomad'
+            ? form.wallet
+            : 'eurcash'
+          : 'usdnomad',
+    });
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!form.description || !amount) return;
+
+    const finalWallet: WalletId = form.currency === 'EUR' ? form.wallet : 'usdnomad';
+
+    onAdd({
+      id: crypto.randomUUID(),
+      date: form.date,
+      city: form.city || activity?.city || 'Viagem',
+      description: form.description,
+      category: form.category,
+      currency: form.currency,
+      amount,
+      wallet: finalWallet,
+      activityId: activity?.id,
+      debitCurrency,
+      debitAmount,
+      exchangeRate:
+        form.currency === 'DKK'
+          ? rates.DKK_USD
+          : form.currency === 'CHF'
+            ? rates.CHF_USD
+            : form.currency === 'EUR'
+              ? rates.EUR_USD
+              : 1,
+      note: form.note,
+      createdAt: new Date().toISOString(),
+    });
+
+    onClose();
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={activity ? `Gasto • ${activity.title}` : 'Adicionar gasto'}
+    >
+      <form onSubmit={submit} className="form-grid">
+        <label>
+          Data
+          <input
+            type="date"
+            value={form.date}
+            onChange={(event) => setForm({ ...form, date: event.target.value })}
+          />
+        </label>
+
+        <label>
+          Cidade
+          <input
+            value={form.city}
+            onChange={(event) => setForm({ ...form, city: event.target.value })}
+            placeholder="Ex.: Copenhague"
+          />
+        </label>
+
+        <label className="full">
+          Descrição
+          <input
+            autoFocus={!activity}
+            value={form.description}
+            onChange={(event) => setForm({ ...form, description: event.target.value })}
+            placeholder="Ex.: jantar no Tivoli"
+          />
+        </label>
+
+        <label>
+          Categoria
+          <input
+            value={form.category}
+            onChange={(event) => setForm({ ...form, category: event.target.value })}
+          />
+        </label>
+
+        <label>
+          Moeda local
+          <select
+            value={form.currency}
+            onChange={(event) => changeCurrency(event.target.value as Currency)}
+          >
+            <option value="EUR">EUR</option>
+            <option value="DKK">DKK</option>
+            <option value="CHF">CHF</option>
+            <option value="USD">USD</option>
+          </select>
+        </label>
+
+        <label>
+          Valor local
+          <input
+            inputMode="decimal"
+            value={form.amount}
+            onChange={(event) => setForm({ ...form, amount: event.target.value })}
+            placeholder="0,00"
+          />
+        </label>
+
+        {form.currency === 'EUR' ? (
+          <label>
+            De onde saiu
+            <select
+              value={form.wallet}
+              onChange={(event) => setForm({ ...form, wallet: event.target.value as WalletId })}
+            >
+              <option value="eurcash">Euro físico</option>
+              <option value="eurnomad">Nomad EUR</option>
+            </select>
+          </label>
+        ) : (
+          <label>
+            Carteira
+            <input value="Nomad USD" disabled />
+          </label>
+        )}
+
+        {amount > 0 && (
+          <div className="conversion-preview full">
+            <span>Débito no caixa</span>
+            <b>{exchangeExplanation(amount, form.currency, rates)}</b>
+            <small>
+              {form.currency === 'EUR'
+                ? form.wallet === 'eurcash'
+                  ? 'Será deduzido do Euro físico.'
+                  : 'Será deduzido da Nomad EUR.'
+                : `Será deduzido como ${money(debitAmount, 'USD')} da Nomad USD.`}
+            </small>
+          </div>
+        )}
+
+        {activity?.estimatedAmount && activity.estimatedCurrency && (
+          <div className="estimate-hint full">
+            Previsto no roteiro: <b>{money(activity.estimatedAmount, activity.estimatedCurrency)}</b>
+          </div>
+        )}
+
+        <label className="full">
+          Observação
+          <textarea
+            value={form.note}
+            onChange={(event) => setForm({ ...form, note: event.target.value })}
+            rows={3}
+          />
+        </label>
+
+        <div className="form-actions full">
+          <button type="button" className="ghost" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="primary">Salvar gasto</button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function DocumentsView({
+  docs,
+  setDocs,
+  openSuggestion,
+  openOther,
+}: {
+  docs: Doc[];
+  setDocs: (docs: Doc[]) => void;
+  openSuggestion: (suggestion: DocumentSuggestion, existing?: Doc) => void;
+  openOther: (existing?: Doc) => void;
+}) {
+  const categories: DocumentCategory[] = ['Essenciais', 'Reservas', 'Ingressos'];
+  const [previewDoc, setPreviewDoc] = useState<Doc | undefined>();
+
+  async function removeDocument(doc: Doc) {
+    await deleteFile(doc.id);
+    setDocs(docs.filter((item) => item.id !== doc.id));
+    if (previewDoc?.id === doc.id) setPreviewDoc(undefined);
+  }
+
+  const otherDocs = docs.filter((doc) => !doc.suggestionId);
+
+  return (
+    <section className="page">
+      <PageTitle
+        kicker="DOCUMENTOS"
+        title="Tudo que precisa estar à mão"
+        subtitle="Cada item pode guardar vários PDFs ou imagens. Toque em Ver para abrir qualquer arquivo sem sair do aplicativo."
+      />
+
+      <div className="document-security-note">
+        <FolderOpen size={20} />
+        <div>
+          <b>Arquivos ficam neste aparelho</b>
+          <span>Os PDFs e imagens não são enviados para o repositório público do GitHub.</span>
+        </div>
+      </div>
+
+      {categories.map((category) => {
+        const suggestions = documentSuggestions.filter((item) => item.category === category);
+
+        return (
+          <section className="document-category" key={category}>
+            <div className="section-head compact-section-head">
+              <div>
+                <span className="eyebrow">{category.toUpperCase()}</span>
+                <h3>{category}</h3>
+              </div>
+            </div>
+
+            <div className="document-suggestion-list">
+              {suggestions.map((suggestion) => {
+                const includedDocs = docs.filter(
+                  (doc) => doc.suggestionId === suggestion.id,
+                );
+                const included = includedDocs.length > 0;
+
+                return (
+                  <div
+                    className={`document-suggestion ${included ? 'included' : ''}`}
+                    key={suggestion.id}
+                  >
+                    <div className="document-check">
+                      {included ? <Check size={16} /> : <FilePlus2 size={16} />}
+                    </div>
+
+                    <div className="document-suggestion-main">
+                      <b>{suggestion.name}</b>
+                      {suggestion.traveler && <span>{suggestion.traveler}</span>}
+                      {included && (
+                        <small className="document-count">
+                          {includedDocs.length}{' '}
+                          {includedDocs.length === 1 ? 'arquivo incluído' : 'arquivos incluídos'}
+                        </small>
+                      )}
+                    </div>
+
+                    <button
+                      className={included ? 'doc-action add-more' : 'primary-mini'}
+                      onClick={() => openSuggestion(suggestion)}
+                    >
+                      <Plus size={15} />
+                      {included ? 'Adicionar mais' : 'Adicionar'}
+                    </button>
+
+                    {included && (
+                      <div className="document-attached-list">
+                        {includedDocs.map((doc) => (
+                          <div className="document-attached-row" key={doc.id}>
+                            <div className="document-attached-copy">
+                              <b>{doc.name}</b>
+                              {doc.original && (
+                                <span className="document-filename">{doc.original}</span>
+                              )}
+                            </div>
+
+                            <div className="document-inline-actions">
+                              <button
+                                className="doc-action view"
+                                onClick={() => setPreviewDoc(doc)}
+                              >
+                                <Eye size={15} />
+                                Ver
+                              </button>
+
+                              <button
+                                className="doc-action"
+                                onClick={() => openSuggestion(suggestion, doc)}
+                              >
+                                Substituir
+                              </button>
+
+                              <button
+                                className="doc-action danger"
+                                onClick={() => removeDocument(doc)}
+                              >
+                                <Trash2 size={14} />
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
+
+      <section className="other-document-section">
+        <div className="other-document-card">
+          <div>
+            <span className="eyebrow">OUTROS</span>
+            <h3>Documento adicional</h3>
+            <p>Use para confirmações, comprovantes ou arquivos que não estejam na lista acima.</p>
+          </div>
+          <button className="primary-mini" onClick={() => openOther()}>
+            <Plus size={16} />
+            Outro documento
+          </button>
+        </div>
+
+        {otherDocs.length > 0 && (
+          <div className="other-document-list">
+            {otherDocs.map((doc) => (
+              <div className="other-document-row" key={doc.id}>
+                <div className="document-check included-small">
+                  <Check size={15} />
+                </div>
+
+                <div className="document-suggestion-main">
+                  <b>{doc.name}</b>
+                  <span>{doc.traveler || 'Família'}</span>
+                  {doc.original && <small className="document-filename">{doc.original}</small>}
+                </div>
+
+                <div className="document-inline-actions">
+                  <button className="doc-action view" onClick={() => setPreviewDoc(doc)}>
+                    <Eye size={15} />
+                    Ver
+                  </button>
+                  <button className="doc-action" onClick={() => openOther(doc)}>
+                    Substituir
+                  </button>
+                  <button className="doc-action danger" onClick={() => removeDocument(doc)}>
+                    <Trash2 size={14} />
+                    Excluir
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <DocumentPreviewDialog doc={previewDoc} onClose={() => setPreviewDoc(undefined)} />
+    </section>
+  );
+}
+
+function DocumentDialog({
+  open,
+  suggestion,
+  existing,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  suggestion?: DocumentSuggestion;
+  existing?: Doc;
+  onClose: () => void;
+  onSave: (docs: Doc[]) => void;
+}) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [name, setName] = useState('');
+  const [traveler, setTraveler] = useState('Família');
+  const [category, setCategory] = useState<DocumentCategory | 'Outros'>('Outros');
+
+  useEffect(() => {
+    if (!open) return;
+    setFiles([]);
+    setName(existing?.name || suggestion?.name || '');
+    setTraveler(existing?.traveler || suggestion?.traveler || 'Família');
+    setCategory(existing?.category || suggestion?.category || 'Outros');
+  }, [open, suggestion, existing]);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!files.length || !name) return;
+
+    if (existing) {
+      const file = files[0];
+      await putFile(existing.id, file);
+
+      onSave([
+        {
+          ...existing,
+          name,
+          type: category,
+          traveler,
+          original: file.name,
+          stored: true,
+          suggestionId: suggestion?.id || existing.suggestionId,
+          category,
+        },
+      ]);
+
+      onClose();
+      return;
+    }
+
+    const created: Doc[] = [];
+
+    for (const file of files) {
+      const id = crypto.randomUUID();
+      await putFile(id, file);
+
+      created.push({
+        id,
+        name,
+        type: category,
+        traveler,
+        original: file.name,
+        stored: true,
+        createdAt: new Date().toISOString(),
+        suggestionId: suggestion?.id,
+        category,
+      });
+    }
+
+    onSave(created);
+    onClose();
+  }
+
+  const dialogTitle = existing
+    ? 'Substituir documento'
+    : suggestion
+      ? 'Adicionar documento'
+      : 'Outro documento';
+
+  return (
+    <Dialog open={open} onClose={onClose} title={dialogTitle}>
+      <form onSubmit={submit} className="form-grid">
+        <label className="full">
+          Nome
+          <input value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+
+        <label>
+          Categoria
+          <select
+            value={category}
+            onChange={(event) => setCategory(event.target.value as DocumentCategory | 'Outros')}
+          >
+            <option>Essenciais</option>
+            <option>Reservas</option>
+            <option>Ingressos</option>
+            <option>Outros</option>
+          </select>
+        </label>
+
+        <label>
+          Viajante
+          <select value={traveler} onChange={(event) => setTraveler(event.target.value)}>
+            <option>Família</option>
+            <option>Filipe</option>
+            <option>Rafaella</option>
+            <option>Martín</option>
+            <option>Maria Esther</option>
+          </select>
+        </label>
+
+        <label className="full file-input-label">
+          {existing ? 'Novo arquivo' : 'Arquivo(s)'}
+          <input
+            type="file"
+            accept="application/pdf,image/*"
+            multiple={!existing}
+            onChange={(event) => setFiles(Array.from(event.target.files || []))}
+          />
+
+          {existing?.original && files.length === 0 && (
+            <span>Atual: {existing.original}</span>
+          )}
+
+          {!existing && files.length > 1 && (
+            <span>{files.length} arquivos selecionados</span>
+          )}
+
+          {files.length === 1 && <span>Selecionado: {files[0].name}</span>}
+        </label>
+
+        {!existing && suggestion && (
+          <div className="multi-file-hint full">
+            Você pode selecionar vários arquivos de uma vez ou usar “Adicionar mais” depois.
+          </div>
+        )}
+
+        <div className="form-actions full">
+          <button type="button" className="ghost" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="primary" disabled={!files.length || !name}>
+            {existing
+              ? 'Substituir arquivo'
+              : files.length > 1
+                ? `Salvar ${files.length} arquivos`
+                : 'Salvar documento'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+function DocumentPreviewDialog({
+  doc,
+  onClose,
+}: {
+  doc?: Doc;
+  onClose: () => void;
+}) {
+  const [url, setUrl] = useState<string | undefined>();
+  const [mime, setMime] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [missing, setMissing] = useState(false);
+
+  useEffect(() => {
+    let objectUrl: string | undefined;
+    let cancelled = false;
+
+    if (!doc) {
+      setUrl(undefined);
+      setMime('');
+      setMissing(false);
+      return;
+    }
+
+    setLoading(true);
+    setMissing(false);
+
+    getFile(doc.id)
+      .then((file) => {
+        if (cancelled) return;
+
+        if (!file) {
+          setMissing(true);
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(file);
+        setUrl(objectUrl);
+        setMime(file.type || '');
+      })
+      .catch(() => {
+        if (!cancelled) setMissing(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [doc]);
+
+  const isPdf = mime === 'application/pdf' || doc?.original?.toLowerCase().endsWith('.pdf');
+  const isImage = mime.startsWith('image/');
+
+  return (
+    <Dialog open={Boolean(doc)} onClose={onClose} title={doc?.name || 'Documento'}>
+      <div className="document-preview">
+        {loading && <div className="document-preview-message">Abrindo documento…</div>}
+
+        {!loading && missing && (
+          <div className="document-preview-message error">
+            O arquivo não foi encontrado neste aparelho. Adicione-o novamente.
+          </div>
+        )}
+
+        {!loading && !missing && url && isPdf && (
+          <iframe
+            className="document-preview-frame"
+            src={url}
+            title={doc?.name || 'Documento PDF'}
+          />
+        )}
+
+        {!loading && !missing && url && isImage && (
+          <img
+            className="document-preview-image"
+            src={url}
+            alt={doc?.name || 'Documento'}
+          />
+        )}
+
+        {!loading && !missing && url && !isPdf && !isImage && (
+          <div className="document-preview-message">
+            Este formato não possui pré-visualização interna.
+          </div>
+        )}
+
+        {doc?.original && (
+          <div className="document-preview-footer">
+            <span>Arquivo</span>
+            <b>{doc.original}</b>
+          </div>
+        )}
+      </div>
+    </Dialog>
+  );
+}
+
+function ScheduleExtraDialog({
+  open,
+  extra,
+  onClose,
+  onSchedule,
+}: {
+  open: boolean;
+  extra?: ExtraItem;
+  onClose: () => void;
+  onSchedule: (time: string) => void;
+}) {
+  const [time, setTime] = useState('17:00');
+
+  useEffect(() => {
+    if (open) setTime('17:00');
+  }, [open, extra]);
+
+  return (
+    <Dialog open={open} onClose={onClose} title={extra ? `Adicionar • ${extra.title}` : 'Adicionar ao dia'}>
+      <div className="schedule-extra-dialog">
+        <p>Escolha o horário. O extra entrará automaticamente na posição correta da sequência do dia.</p>
+
+        <label>
+          Horário
+          <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
+        </label>
+
+        {extra?.note && <div className="estimate-hint">{extra.note}</div>}
+
+        <div className="form-actions">
+          <button type="button" className="ghost" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="primary" onClick={() => onSchedule(time)} disabled={!time}>
+            Adicionar ao roteiro
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function OpsView({
+  check,
+  setCheck,
+}: {
+  check: Record<string, boolean>;
+  setCheck: (value: Record<string, boolean>) => void;
+}) {
+  const completedCount = seedChecklist.filter((item) => check[item.id]).length;
+  const progress = Math.round((completedCount / seedChecklist.length) * 100) || 0;
+
+  return (
+    <section className="page">
+      <PageTitle
+        kicker="OPS"
+        title="Preparação e pendências"
+        subtitle="O que precisa estar resolvido antes ou durante a viagem."
+      />
+
+      <div className="ops-progress-card">
+        <div>
+          <span className="eyebrow">PREPARAÇÃO</span>
+          <h2>{progress}%</h2>
+          <p>{completedCount} de {seedChecklist.length} itens concluídos</p>
+        </div>
+        <CircleCheckBig size={36} />
+      </div>
+
+      <div className="checklist-list">
+        {seedChecklist.map((item) => (
+          <label className={`check-row ${check[item.id] ? 'checked' : ''}`} key={item.id}>
+            <input
+              type="checkbox"
+              checked={check[item.id] || false}
+              onChange={() => setCheck({ ...check, [item.id]: !check[item.id] })}
+            />
+            <div>
+              <b>{item.label}</b>
+              <span>{item.category} • prioridade {item.priority}</span>
+            </div>
+          </label>
+        ))}
+      </div>
+
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">ASSISTÊNCIA</span>
+          <h3>Telefones do seguro</h3>
+        </div>
+      </div>
+
+      <div className="phone-grid">
+        {insurancePhones.map(([country, phone]) => (
+          <a className="phone-card" href={`tel:${phone.replace(/[^+\d]/g, '')}`} key={country}>
+            <Phone size={17} />
+            <div>
+              <span>{country}</span>
+              <b>{phone}</b>
+            </div>
+          </a>
+        ))}
+      </div>
+
+      <div className="ops-alert">
+        <AlertTriangle size={18} />
+        <div>
+          <b>Durante a viagem</b>
+          <span>Use “Concluir” no Hoje para fazer o próximo compromisso subir automaticamente.</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PageTitle({
+  kicker,
+  title,
+  subtitle,
+}: {
+  kicker: string;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="page-title">
+      <span className="eyebrow">{kicker}</span>
+      <h2>{title}</h2>
+      <p>{subtitle}</p>
+    </div>
+  );
+}
+
+function Nav({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className={active ? 'active' : ''} onClick={onClick}>
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function Empty({
+  icon,
+  title,
+  text,
+}: {
+  icon: ReactNode;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="empty">
+      <div>{icon}</div>
+      <b>{title}</b>
+      <span>{text}</span>
+    </div>
+  );
+}
