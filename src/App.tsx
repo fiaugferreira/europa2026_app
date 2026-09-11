@@ -15,6 +15,7 @@ import {
   Phone,
   Plus,
   ReceiptText,
+  RefreshCw,
   RotateCcw,
   Trash2,
   WalletCards,
@@ -37,6 +38,7 @@ import {
   type DocumentCategory,
   type DocumentSuggestion,
   type ExtraItem,
+  type Place,
   type WalletId,
 } from './data/trip';
 import {
@@ -55,6 +57,12 @@ import {
   putFile,
   save,
 } from './lib/storage';
+import {
+  getEventWeather,
+  weatherUpdatedLabel,
+  weatherVisual,
+  type EventWeather,
+} from './lib/weather';
 
 type Tab = 'today' | 'money' | 'documents' | 'ops';
 
@@ -444,11 +452,15 @@ export default function App() {
           setDocSuggestion(undefined);
           setDocReplace(undefined);
         }}
-        onSave={(doc) => {
+        onSave={(savedDocs) => {
           if (docReplace) {
-            setDocs(docs.map((item) => (item.id === docReplace.id ? doc : item)));
+            const replacement = savedDocs[0];
+            if (!replacement) return;
+            setDocs(
+              docs.map((item) => (item.id === docReplace.id ? replacement : item)),
+            );
           } else {
-            setDocs([doc, ...docs]);
+            setDocs([...savedDocs, ...docs]);
           }
         }}
       />
@@ -701,9 +713,10 @@ function TravelActivityCard({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<Doc | undefined>();
   const place = placeFor(activity);
-  const linkedDocs = (activity.documentSuggestionIds || [])
-    .map((suggestionId) => docs.find((doc) => doc.suggestionId === suggestionId))
-    .filter(Boolean) as Doc[];
+  const linkedSuggestionIds = activity.documentSuggestionIds || [];
+  const linkedDocs = docs.filter(
+    (doc) => doc.suggestionId && linkedSuggestionIds.includes(doc.suggestionId),
+  );
   const hasDetails = Boolean(
     activity.note ||
     activity.people ||
@@ -777,6 +790,8 @@ function TravelActivityCard({
             )}
           </div>
         )}
+
+        <EventWeatherCard activity={activity} place={place} />
 
         {detailsOpen && (
           <div className="event-details">
@@ -864,6 +879,218 @@ function TravelActivityCard({
         onClose={() => setPreviewDoc(undefined)}
       />
     </article>
+  );
+}
+
+
+function EventWeatherCard({
+  activity,
+  place,
+}: {
+  activity: Activity;
+  place?: Place;
+}) {
+  const [weather, setWeather] = useState<EventWeather | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  async function refresh(force = false) {
+    setLoading(true);
+    try {
+      const next = await getEventWeather(activity, place, { force });
+      setWeather(next);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initialLoad() {
+      const next = await getEventWeather(activity, place);
+      if (!cancelled) setWeather(next);
+    }
+
+    void initialLoad();
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void getEventWeather(activity, place).then((next) => {
+        if (!cancelled) setWeather(next);
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [activity.id, activity.date, activity.time, activity.city, place?.id]);
+
+  if (!weather && loading) {
+    return (
+      <div className="event-weather weather-loading">
+        <span className="weather-icon">🌤️</span>
+        <span>Atualizando previsão…</span>
+      </div>
+    );
+  }
+
+  if (!weather) {
+    return (
+      <div className="event-weather weather-loading">
+        <span className="weather-icon">🌤️</span>
+        <span>Carregando previsão…</span>
+      </div>
+    );
+  }
+
+  if (weather.status === 'not-yet-available') {
+    return (
+      <div className="event-weather weather-unavailable">
+        <div className="weather-main-static">
+          <span className="weather-icon">🗓️</span>
+          <div className="weather-copy">
+            <b>Previsão ainda não disponível</b>
+            <span>{weather.message}</span>
+          </div>
+        </div>
+        <span className="weather-source">Open-Meteo • janela de até 16 dias</span>
+      </div>
+    );
+  }
+
+  if (weather.status !== 'ready') {
+    return (
+      <div className="event-weather weather-error">
+        <div className="weather-main-static">
+          <span className="weather-icon">🌥️</span>
+          <div className="weather-copy">
+            <b>Previsão indisponível agora</b>
+            <span>{weather.message}</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="weather-refresh"
+          onClick={() => void refresh(true)}
+          disabled={loading}
+          aria-label="Atualizar previsão"
+        >
+          <RefreshCw size={15} className={loading ? 'weather-spin' : ''} />
+          Atualizar
+        </button>
+      </div>
+    );
+  }
+
+  const visual = weatherVisual(weather.weatherCode);
+  const probability = weather.precipitationProbability;
+  const mm = weather.precipitationMm;
+  const riskClass =
+    (probability || 0) >= 70 || (mm || 0) >= 5
+      ? 'weather-risk-high'
+      : (probability || 0) >= 40 || (mm || 0) >= 1
+        ? 'weather-risk-medium'
+        : 'weather-risk-low';
+
+  const temperatureText = weather.mode === 'hourly'
+    ? weather.temperature !== undefined
+      ? `${Math.round(weather.temperature)}°C`
+      : '—'
+    : weather.temperatureMin !== undefined && weather.temperatureMax !== undefined
+      ? `${Math.round(weather.temperatureMin)}–${Math.round(weather.temperatureMax)}°C`
+      : '—';
+
+  const precipitationText = mm !== undefined
+    ? weather.mode === 'hourly'
+      ? `${mm.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mm/${weather.precipitationWindowHours || 1}h`
+      : `${mm.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mm/dia`
+    : '— mm';
+
+  return (
+    <div className={`event-weather ${riskClass} ${weather.stale ? 'weather-stale' : ''}`}>
+      <div className="weather-topline">
+        <button
+          type="button"
+          className="weather-summary"
+          onClick={() => setDetailsOpen(!detailsOpen)}
+          aria-expanded={detailsOpen}
+        >
+          <span className="weather-icon">{visual.icon}</span>
+          <div className="weather-copy">
+            <b>
+              {temperatureText}
+              {' · '}
+              chuva {probability !== undefined ? `${probability}%` : '—'}
+              {' · '}
+              {precipitationText}
+            </b>
+            <span>
+              {visual.label}
+              {weather.stale ? ' • última previsão salva' : ''}
+            </span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="weather-refresh"
+          onClick={() => void refresh(true)}
+          disabled={loading}
+          aria-label="Atualizar previsão deste evento"
+        >
+          <RefreshCw size={15} className={loading ? 'weather-spin' : ''} />
+          <span>{loading ? 'Atualizando' : 'Atualizar'}</span>
+        </button>
+      </div>
+
+      {detailsOpen && (
+        <div className="weather-details">
+          <div>
+            <span>Risco de precipitação</span>
+            <b>{probability !== undefined ? `${probability}%` : '—'}</b>
+          </div>
+          <div>
+            <span>Volume previsto</span>
+            <b>{precipitationText}</b>
+          </div>
+          {weather.apparentTemperature !== undefined && (
+            <div>
+              <span>Sensação</span>
+              <b>{Math.round(weather.apparentTemperature)}°C</b>
+            </div>
+          )}
+          {weather.windKmh !== undefined && (
+            <div>
+              <span>Vento</span>
+              <b>{Math.round(weather.windKmh)} km/h</b>
+            </div>
+          )}
+          <div>
+            <span>Referência</span>
+            <b>{weather.mode === 'hourly' ? weather.timeLabel || 'Horário do evento' : 'Dia inteiro'}</b>
+          </div>
+          <div>
+            <span>Local</span>
+            <b>{weather.location}</b>
+          </div>
+        </div>
+      )}
+
+      <div className="weather-meta">
+        <span>
+          {weather.fetchedAt
+            ? `Atualizado ${weatherUpdatedLabel(weather.fetchedAt)}`
+            : 'Previsão salva'}
+        </span>
+        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">
+          Dados: Open-Meteo
+        </a>
+      </div>
+    </div>
   );
 }
 
@@ -1328,7 +1555,7 @@ function DocumentsView({
       <PageTitle
         kicker="DOCUMENTOS"
         title="Tudo que precisa estar à mão"
-        subtitle="Adicione cada arquivo diretamente no item correspondente. Depois, toque em Ver para abrir sem sair do aplicativo."
+        subtitle="Cada item pode guardar vários PDFs ou imagens. Toque em Ver para abrir qualquer arquivo sem sair do aplicativo."
       />
 
       <div className="document-security-note">
@@ -1353,11 +1580,16 @@ function DocumentsView({
 
             <div className="document-suggestion-list">
               {suggestions.map((suggestion) => {
-                const includedDoc = docs.find((doc) => doc.suggestionId === suggestion.id);
-                const included = Boolean(includedDoc);
+                const includedDocs = docs.filter(
+                  (doc) => doc.suggestionId === suggestion.id,
+                );
+                const included = includedDocs.length > 0;
 
                 return (
-                  <div className={`document-suggestion ${included ? 'included' : ''}`} key={suggestion.id}>
+                  <div
+                    className={`document-suggestion ${included ? 'included' : ''}`}
+                    key={suggestion.id}
+                  >
                     <div className="document-check">
                       {included ? <Check size={16} /> : <FilePlus2 size={16} />}
                     </div>
@@ -1365,38 +1597,60 @@ function DocumentsView({
                     <div className="document-suggestion-main">
                       <b>{suggestion.name}</b>
                       {suggestion.traveler && <span>{suggestion.traveler}</span>}
-                      {includedDoc?.original && (
-                        <small className="document-filename">{includedDoc.original}</small>
+                      {included && (
+                        <small className="document-count">
+                          {includedDocs.length}{' '}
+                          {includedDocs.length === 1 ? 'arquivo incluído' : 'arquivos incluídos'}
+                        </small>
                       )}
                     </div>
 
-                    {includedDoc ? (
-                      <div className="document-inline-actions">
-                        <button
-                          className="doc-action view"
-                          onClick={() => setPreviewDoc(includedDoc)}
-                        >
-                          <Eye size={15} />
-                          Ver
-                        </button>
-                        <button
-                          className="doc-action"
-                          onClick={() => openSuggestion(suggestion, includedDoc)}
-                        >
-                          Substituir
-                        </button>
-                        <button
-                          className="doc-action danger"
-                          onClick={() => removeDocument(includedDoc)}
-                        >
-                          <Trash2 size={14} />
-                          Excluir
-                        </button>
+                    <button
+                      className={included ? 'doc-action add-more' : 'primary-mini'}
+                      onClick={() => openSuggestion(suggestion)}
+                    >
+                      <Plus size={15} />
+                      {included ? 'Adicionar mais' : 'Adicionar'}
+                    </button>
+
+                    {included && (
+                      <div className="document-attached-list">
+                        {includedDocs.map((doc) => (
+                          <div className="document-attached-row" key={doc.id}>
+                            <div className="document-attached-copy">
+                              <b>{doc.name}</b>
+                              {doc.original && (
+                                <span className="document-filename">{doc.original}</span>
+                              )}
+                            </div>
+
+                            <div className="document-inline-actions">
+                              <button
+                                className="doc-action view"
+                                onClick={() => setPreviewDoc(doc)}
+                              >
+                                <Eye size={15} />
+                                Ver
+                              </button>
+
+                              <button
+                                className="doc-action"
+                                onClick={() => openSuggestion(suggestion, doc)}
+                              >
+                                Substituir
+                              </button>
+
+                              <button
+                                className="doc-action danger"
+                                onClick={() => removeDocument(doc)}
+                              >
+                                <Trash2 size={14} />
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ) : (
-                      <button className="primary-mini" onClick={() => openSuggestion(suggestion)}>
-                        Adicionar
-                      </button>
                     )}
                   </div>
                 );
@@ -1468,16 +1722,16 @@ function DocumentDialog({
   suggestion?: DocumentSuggestion;
   existing?: Doc;
   onClose: () => void;
-  onSave: (doc: Doc) => void;
+  onSave: (docs: Doc[]) => void;
 }) {
-  const [file, setFile] = useState<File | undefined>();
+  const [files, setFiles] = useState<File[]>([]);
   const [name, setName] = useState('');
   const [traveler, setTraveler] = useState('Família');
   const [category, setCategory] = useState<DocumentCategory | 'Outros'>('Outros');
 
   useEffect(() => {
     if (!open) return;
-    setFile(undefined);
+    setFiles([]);
     setName(existing?.name || suggestion?.name || '');
     setTraveler(existing?.traveler || suggestion?.traveler || 'Família');
     setCategory(existing?.category || suggestion?.category || 'Outros');
@@ -1485,23 +1739,49 @@ function DocumentDialog({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!file || !name) return;
+    if (!files.length || !name) return;
 
-    const id = existing?.id || crypto.randomUUID();
-    await putFile(id, file);
+    if (existing) {
+      const file = files[0];
+      await putFile(existing.id, file);
 
-    onSave({
-      id,
-      name,
-      type: category,
-      traveler,
-      original: file.name,
-      stored: true,
-      createdAt: existing?.createdAt || new Date().toISOString(),
-      suggestionId: suggestion?.id || existing?.suggestionId,
-      category,
-    });
+      onSave([
+        {
+          ...existing,
+          name,
+          type: category,
+          traveler,
+          original: file.name,
+          stored: true,
+          suggestionId: suggestion?.id || existing.suggestionId,
+          category,
+        },
+      ]);
 
+      onClose();
+      return;
+    }
+
+    const created: Doc[] = [];
+
+    for (const file of files) {
+      const id = crypto.randomUUID();
+      await putFile(id, file);
+
+      created.push({
+        id,
+        name,
+        type: category,
+        traveler,
+        original: file.name,
+        stored: true,
+        createdAt: new Date().toISOString(),
+        suggestionId: suggestion?.id,
+        category,
+      });
+    }
+
+    onSave(created);
     onClose();
   }
 
@@ -1544,24 +1824,41 @@ function DocumentDialog({
         </label>
 
         <label className="full file-input-label">
-          {existing ? 'Novo arquivo' : 'Arquivo'}
+          {existing ? 'Novo arquivo' : 'Arquivo(s)'}
           <input
             type="file"
             accept="application/pdf,image/*"
-            onChange={(event) => setFile(event.target.files?.[0])}
+            multiple={!existing}
+            onChange={(event) => setFiles(Array.from(event.target.files || []))}
           />
-          {existing?.original && !file && (
+
+          {existing?.original && files.length === 0 && (
             <span>Atual: {existing.original}</span>
           )}
-          {file && <span>Novo: {file.name}</span>}
+
+          {!existing && files.length > 1 && (
+            <span>{files.length} arquivos selecionados</span>
+          )}
+
+          {files.length === 1 && <span>Selecionado: {files[0].name}</span>}
         </label>
+
+        {!existing && suggestion && (
+          <div className="multi-file-hint full">
+            Você pode selecionar vários arquivos de uma vez ou usar “Adicionar mais” depois.
+          </div>
+        )}
 
         <div className="form-actions full">
           <button type="button" className="ghost" onClick={onClose}>
             Cancelar
           </button>
-          <button className="primary" disabled={!file || !name}>
-            {existing ? 'Substituir arquivo' : 'Salvar documento'}
+          <button className="primary" disabled={!files.length || !name}>
+            {existing
+              ? 'Substituir arquivo'
+              : files.length > 1
+                ? `Salvar ${files.length} arquivos`
+                : 'Salvar documento'}
           </button>
         </div>
       </form>
