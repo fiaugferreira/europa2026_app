@@ -2298,3 +2298,366 @@ main {
     gap: 3px;
   }
 }
+
+/* LOOK DO EVENTO */
+
+.outfit-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 7px;
+  border-radius: 99px;
+  color: #8fd8cc;
+  background: rgba(105, 196, 181, 0.12);
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.event-outfit {
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid #27344b;
+}
+
+.event-outfit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.event-outfit-head > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #aebbd0;
+  font-size: 11px;
+}
+
+.event-outfit-head svg {
+  color: var(--teal);
+}
+
+.event-outfit-head > span {
+  color: #688c87;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.outfit-empty {
+  padding: 11px;
+  border: 1px dashed #31504d;
+  border-radius: 11px;
+  background: rgba(16, 32, 31, 0.42);
+}
+
+.outfit-empty p {
+  margin: 0 0 9px;
+  color: #829794;
+  font-size: 10px;
+}
+
+.outfit-picker-actions,
+.outfit-saved-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.outfit-picker,
+.outfit-action {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid #31504d;
+  border-radius: 10px;
+  background: #142324;
+  color: #a7c2be;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.primary-outfit-picker {
+  border-color: rgba(230, 185, 94, 0.34);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.outfit-picker input,
+.outfit-action input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.outfit-saved {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 11px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid #31504d;
+  border-radius: 12px;
+  background: #101c1d;
+}
+
+.outfit-thumbnail {
+  width: 92px;
+  height: 112px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #38524f;
+  border-radius: 10px;
+  background: #0b1418;
+  color: #78908f;
+  cursor: pointer;
+}
+
+.outfit-thumbnail img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.outfit-thumbnail span {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  padding: 8px;
+  font-size: 8px;
+  text-align: center;
+}
+
+.outfit-saved-main {
+  min-width: 0;
+}
+
+.outfit-saved-main > b,
+.outfit-saved-main > span,
+.outfit-saved-main > small {
+  display: block;
+}
+
+.outfit-saved-main > b {
+  color: #dce8e6;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.outfit-saved-main > span {
+  margin-top: 3px;
+  color: #718986;
+  font-size: 9px;
+}
+
+.outfit-saved-main > small {
+  margin-top: 5px;
+  color: var(--danger);
+  font-size: 9px;
+}
+
+.outfit-saved-actions {
+  margin-top: 9px;
+}
+
+.outfit-action {
+  min-height: 32px;
+  padding: 7px 8px;
+  border-color: #2c4142;
+  background: #142022;
+  color: #91aaa7;
+}
+
+button.outfit-action {
+  font: inherit;
+}
+
+.outfit-action.view {
+  border-color: rgba(230, 185, 94, 0.28);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.outfit-action.danger {
+  border-color: rgba(255, 139, 125, 0.22);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.outfit-saving,
+.outfit-error {
+  display: block;
+  margin-top: 7px;
+  font-size: 9px;
+}
+
+.outfit-saving {
+  color: #819694;
+}
+
+.outfit-error {
+  color: var(--danger);
+}
+
+.outfit-preview img {
+  display: block;
+  width: 100%;
+  max-height: min(70vh, 760px);
+  object-fit: contain;
+  border: 1px solid #2c3951;
+  border-radius: 14px;
+  background: #0b1020;
+}
+
+.outfit-preview-footer {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid #263b3a;
+  border-radius: 10px;
+  background: #10201f;
+  color: #78938f;
+  font-size: 9px;
+  text-align: center;
+}
+
+@media (max-width: 680px) {
+  .event-outfit-head {
+    align-items: flex-start;
+  }
+
+  .outfit-saved {
+    grid-template-columns: 82px 1fr;
+  }
+
+  .outfit-thumbnail {
+    width: 82px;
+    height: 104px;
+  }
+
+  .outfit-picker,
+  .outfit-action {
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 390px) {
+  .outfit-saved {
+    grid-template-columns: 1fr;
+  }
+
+  .outfit-thumbnail {
+    width: 100%;
+    height: 190px;
+  }
+
+  .outfit-picker,
+  .outfit-action {
+    flex: 1 1 auto;
+  }
+}
+
+
+/* NEXT EVENT — ROTA / ETA */
+.next-card-route {
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+}
+
+.next-route-hint {
+  display: block;
+  margin-top: 5px;
+  color: #776f61;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.next-go-now {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid rgba(230, 185, 94, 0.36);
+  border-radius: 12px;
+  background: var(--accent);
+  color: #151106;
+  text-decoration: none;
+  font-size: 10px;
+  font-weight: 950;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgba(230, 185, 94, 0.14);
+}
+
+.next-go-now:active {
+  transform: translateY(1px);
+}
+
+/* WEATHER — INTERPRETAÇÃO PRÁTICA DA CHUVA */
+.weather-copy .weather-advice {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 5px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.weather-advice-ok {
+  color: var(--ok) !important;
+  background: var(--ok-soft);
+}
+
+.weather-advice-watch {
+  color: var(--accent) !important;
+  background: var(--accent-soft);
+}
+
+.weather-advice-alert {
+  color: var(--danger) !important;
+  background: var(--danger-soft);
+}
+
+.weather-details .weather-recommendation-watch {
+  border-color: rgba(230, 185, 94, 0.30);
+  background: rgba(230, 185, 94, 0.08);
+}
+
+.weather-details .weather-recommendation-alert {
+  border-color: rgba(255, 139, 125, 0.28);
+  background: rgba(255, 139, 125, 0.07);
+}
+
+.weather-details .weather-recommendation-ok {
+  border-color: rgba(118, 213, 165, 0.24);
+  background: rgba(118, 213, 165, 0.06);
+}
+
+@media (max-width: 680px) {
+  .next-card-route {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .next-go-now {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 2px;
+  }
+}
