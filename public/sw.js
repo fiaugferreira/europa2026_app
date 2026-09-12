@@ -1,6 +1,7 @@
-const CACHE = 'europa-2026-shell-v3';
+const CACHE = 'europa-2026-shell-v4';
 
 const BASE = '/europa2026_app/';
+const APP_ORIGIN = self.location.origin;
 
 const SHELL = [
   BASE,
@@ -34,6 +35,12 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+
+  // APIs externas, como Open-Meteo, não passam pelo cache do Service Worker.
+  // O weather.ts já mantém o próprio cache local.
+  if (url.origin !== APP_ORIGIN) return;
 
   event.respondWith(
     fetch(event.request)
