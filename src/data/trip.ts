@@ -708,6 +708,14 @@ export const places: Place[] = [
     wikiTitle: 'Fläsch',
   },
   {
+    id: 'jacotzurich',
+    name: 'Jacot Haute Chocolaterie Zürich',
+    city: 'Zurique',
+    country: 'Suíça',
+    address: 'Münsterhof 4, 8001 Zürich, Switzerland',
+    note: 'Loja na Old Town. Quarta-feira: 10:00–18:30. Chegar às 18:00 para visita rápida antes do jantar.',
+  },
+  {
     id: 'ledezaley',
     name: 'Restaurant Le Dézaley Zürich',
     city: 'Zurique',
@@ -1791,7 +1799,7 @@ export const days: Day[] = [
     date: '2026-09-30',
     city: 'Bilten → Maienfeld → Malans → Fläsch → Zurique',
     country: 'Suíça',
-    title: 'Läderach + região vinícola + Le Dézaley + Old Town',
+    title: 'Läderach + região vinícola + Jacot + Le Dézaley + Old Town',
     hotel: '25hours Hotel Zürich West',
     heroWiki: 'Maienfeld',
     activities: [
@@ -1850,20 +1858,31 @@ export const days: Day[] = [
       a({
         id: 'd14-a05',
         date: '2026-09-30',
-        time: '~18:10',
-        title: 'Parkhaus Urania • estacionar para jantar + Old Town',
+        time: '17:50',
+        title: 'Parkhaus Urania • estacionar para Jacot + jantar + Old Town',
         category: 'Estacionamento',
         city: 'Zurique',
         placeId: 'urania',
         status: 'definido',
         paid: 'nao',
-        note: 'Uraniastrasse 3. Aberto 24h/365 dias • 607 vagas • altura máxima 2,10 m. Deixar o carro aqui durante o jantar e todo o passeio pela Altstadt.',
+        note: 'Chegar às 17:50. Uraniastrasse 3. Aberto 24h/365 dias • 607 vagas • altura máxima 2,10 m. Deixar o carro aqui durante Jacot, jantar e passeio pela Altstadt.',
       }),
       a({
         id: 'd14-a06',
+        date: '2026-09-30',
+        time: '18:00–18:20',
+        title: 'Jacot Haute Chocolaterie Zürich',
+        category: 'Chocolateria',
+        city: 'Zurique',
+        placeId: 'jacotzurich',
+        status: 'definido',
+        note: 'Münsterhof 4, na Old Town. Quarta-feira funciona 10:00–18:30. Visita rápida antes do fechamento.',
+      }),
+      a({
+        id: 'd14-a07',
         documentSuggestionIds: ['docs-ledezaley'],
         date: '2026-09-30',
-        time: '18:30',
+        time: '18:40',
         title: 'Le Dézaley • fondue',
         category: 'Restaurante',
         city: 'Zurique',
@@ -1873,10 +1892,10 @@ export const days: Day[] = [
         estimatedAmount: 170,
         estimatedCurrency: 'CHF',
         suggestedWallet: 'usdnomad',
-        note: 'Jantar já dentro da Old Town. Quarta-feira: 18:00–24:00. Reserva recomendada para 18:30; reservas online para o mesmo dia somente até 16:30.',
+        note: 'Jantar já dentro da Old Town. Caminhar da Jacot até o restaurante. Quarta-feira: 18:00–24:00. Reserva recomendada para 18:40; reservas online para o mesmo dia somente até 16:30.',
       }),
       a({
-        id: 'd14-a07',
+        id: 'd14-a08',
         date: '2026-09-30',
         time: '~20:00–21:30',
         title: 'Zürich Old Town • passeio noturno',
@@ -2136,7 +2155,7 @@ export const seedChecklist = [
   { id: 'c8', label: 'Comprar/confirmar NEMO Science Museum', category: 'Ingressos', priority: 'alta' },
   { id: 'c9', label: 'Comprar/confirmar Gouda Cheese Experience', category: 'Ingressos', priority: 'media' },
   { id: 'c10', label: 'Falar com a vinícola de Fläsch em 28/09', category: 'Reserva', priority: 'alta' },
-  { id: 'c11', label: 'Reservar Le Dézaley para 30/09 às 18:30', category: 'Reserva', priority: 'alta' },
+  { id: 'c11', label: 'Reservar Le Dézaley para 30/09 às 18:40', category: 'Reserva', priority: 'alta' },
 ];
 
 // O app deve começar sem documentos pessoais pré-carregados.
@@ -2164,7 +2183,7 @@ export const documentSuggestions: DocumentSuggestion[] = [
   { id: 'docs-barr', category: 'Reservas', name: 'Restaurant Barr • 20/09 às 12:30' },
   { id: 'docs-kynd', category: 'Reservas', name: 'KYND • 20/09 às 09:00' },
   { id: 'docs-laderach', category: 'Reservas', name: 'House of Läderach • pedido #212152' },
-  { id: 'docs-ledezaley', category: 'Reservas', name: 'Le Dézaley • 30/09 às 18:30' },
+  { id: 'docs-ledezaley', category: 'Reservas', name: 'Le Dézaley • 30/09 às 18:40' },
 
   // INGRESSOS
   { id: 'docs-tivoli', category: 'Ingressos', name: 'Tivoli Gardens' },
