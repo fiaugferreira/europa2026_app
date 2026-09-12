@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import {
   AlertTriangle,
+  Camera,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -15,6 +16,7 @@ import {
   Phone,
   Plus,
   ReceiptText,
+  RefreshCw,
   RotateCcw,
   Trash2,
   WalletCards,
@@ -37,6 +39,7 @@ import {
   type DocumentCategory,
   type DocumentSuggestion,
   type ExtraItem,
+  type Place,
   type WalletId,
 } from './data/trip';
 import {
@@ -55,6 +58,12 @@ import {
   putFile,
   save,
 } from './lib/storage';
+import {
+  getEventWeather,
+  weatherUpdatedLabel,
+  weatherVisual,
+  type EventWeather,
+} from './lib/weather';
 
 type Tab = 'today' | 'money' | 'documents' | 'ops';
 
@@ -85,6 +94,13 @@ type Doc = {
   createdAt?: string;
   suggestionId?: string;
   category?: DocumentCategory | 'Outros';
+};
+
+type OutfitPhoto = {
+  storageId: string;
+  original: string;
+  createdAt: string;
+  source: 'camera' | 'gallery';
 };
 
 type ScheduledExtra = {
@@ -123,6 +139,64 @@ function firstMinutes(time?: string) {
   const match = time.match(/(\d{1,2}):(\d{2})/);
   if (!match) return undefined;
   return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function localIsoDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function eventStartDateTime(activity: Activity) {
+  const match = activity.time?.match(/(\d{1,2}):(\d{2})/);
+  if (!match) return undefined;
+
+  const hour = String(Number(match[1])).padStart(2, '0');
+  const minute = match[2];
+  return new Date(`${activity.date}T${hour}:${minute}:00`);
+}
+
+function compactDuration(minutes: number) {
+  const safe = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(safe / 60);
+  const rest = safe % 60;
+  if (!hours) return `${rest} min`;
+  if (!rest) return `${hours}h`;
+  return `${hours}h ${rest}min`;
+}
+
+function nextEventTimingLabel(activity: Activity, now: Date) {
+  if (localIsoDate(now) !== activity.date) {
+    return activity.time ? `Horário ${activity.time}` : undefined;
+  }
+
+  const start = eventStartDateTime(activity);
+  if (!start) return activity.time || undefined;
+
+  const diffMinutes = Math.round((start.getTime() - now.getTime()) / 60_000);
+
+  if (diffMinutes > 90) return `Evento em ${compactDuration(diffMinutes)}`;
+  if (diffMinutes > 30) return `Evento em ${compactDuration(diffMinutes)} • confira o ETA no Maps`;
+  if (diffMinutes > 0) return `Evento em ${compactDuration(diffMinutes)} • deixe a rota pronta`;
+  if (diffMinutes >= -60) return 'Horário do evento • confira a rota agora';
+  return activity.time ? `Horário ${activity.time}` : undefined;
+}
+
+function precipitationAdvice(probability?: number, mm?: number) {
+  if (mm !== undefined && mm > 10) {
+    return { icon: '🌧️', label: 'Chuva forte • priorize opção coberta', tone: 'alert' as const };
+  }
+  if (mm !== undefined && mm >= 3) {
+    return { icon: '☔️', label: 'Chuva relevante • leve guarda-chuva', tone: 'alert' as const };
+  }
+  if (mm !== undefined && mm >= 0.5) {
+    return { icon: '🌂', label: 'Chuva leve • leve guarda-chuva', tone: 'watch' as const };
+  }
+  if ((probability || 0) >= 60) {
+    return { icon: '🌂', label: 'Pode chover • leve guarda-chuva', tone: 'watch' as const };
+  }
+  return { icon: '✓', label: 'Sem chuva relevante', tone: 'ok' as const };
 }
 
 function buildScheduledActivity(extra: ExtraItem, scheduled: ScheduledExtra): Activity {
@@ -505,6 +579,18 @@ function TodayView({
   const beforeTrip = today < days[0].date;
 
   const nextActivity = selectedDay.activities.find((activity) => !activity.completed);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const nextPlace = nextActivity ? placeFor(nextActivity) : undefined;
+  const nextTiming = nextActivity ? nextEventTimingLabel(nextActivity, now) : undefined;
+  const nextMapsUrl = nextPlace
+    ? googleMapsDirections(nextPlace.name, nextPlace.address, nextPlace.lat, nextPlace.lng)
+    : undefined;
 
   const dayExpenses = expenses.filter((expense) => expense.date === selectedDate);
   const dayEstimate = totalsFromActivities(selectedDay.activities);
@@ -550,16 +636,32 @@ function TodayView({
       </div>
 
       {nextActivity && (
-        <div className="next-card">
+        <div className="next-card next-card-route">
           <div className="next-icon">
             <Navigation size={20} />
           </div>
           <div className="next-main">
             <span className="eyebrow">PRÓXIMO</span>
             <h3>{nextActivity.title}</h3>
-            <p>{nextActivity.time || nextActivity.category}</p>
+            <p>{nextTiming || nextActivity.time || nextActivity.category}</p>
+            {nextMapsUrl && (
+              <small className="next-route-hint">Maps usa sua posição atual e calcula o ETA ao vivo.</small>
+            )}
           </div>
-          <ChevronRight size={20} />
+          {nextMapsUrl ? (
+            <a
+              className="next-go-now"
+              href={nextMapsUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Abrir rota para ${nextActivity.title}`}
+            >
+              <Navigation size={17} />
+              <span>Sair agora</span>
+            </a>
+          ) : (
+            <ChevronRight size={20} />
+          )}
         </div>
       )}
 
@@ -704,18 +806,24 @@ function TravelActivityCard({
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<Doc | undefined>();
+  const outfitStorageKey = `europa-outfit-v1:${activity.id}`;
+  const [outfit, setOutfit] = useState<OutfitPhoto | undefined>(() =>
+    load<OutfitPhoto | undefined>(outfitStorageKey, undefined),
+  );
   const place = placeFor(activity);
   const linkedSuggestionIds = activity.documentSuggestionIds || [];
   const linkedDocs = docs.filter(
     (doc) => doc.suggestionId && linkedSuggestionIds.includes(doc.suggestionId),
   );
-  const hasDetails = Boolean(
-    activity.note ||
-    activity.people ||
-    place?.address ||
-    linkedDocs.length > 0
-  );
   const realTotals = totalsFromExpenses(expenses);
+
+  useEffect(() => {
+    if (outfit) {
+      save(outfitStorageKey, outfit);
+    } else {
+      localStorage.removeItem(outfitStorageKey);
+    }
+  }, [outfit, outfitStorageKey]);
 
   const sameCurrencyActual = activity.estimatedCurrency
     ? realTotals[activity.estimatedCurrency] || 0
@@ -756,6 +864,7 @@ function TravelActivityCard({
           <span className={`status-chip ${activity.status}`}>{statusLabel(activity.status)}</span>
           {activity.paid === 'sim' && <span className="paid-chip">PAGO</span>}
           {activity.paid === 'parcial' && <span className="partial-chip">PARCIAL</span>}
+          {outfit && <span className="outfit-chip">LOOK</span>}
         </div>
 
         <p className="event-subtitle">{activity.city} • {activity.category}</p>
@@ -782,6 +891,8 @@ function TravelActivityCard({
             )}
           </div>
         )}
+
+        <EventWeatherCard activity={activity} place={place} />
 
         {detailsOpen && (
           <div className="event-details">
@@ -817,6 +928,13 @@ function TravelActivityCard({
                 </div>
               </div>
             )}
+
+
+            <EventOutfitSection
+              activity={activity}
+              outfit={outfit}
+              onChange={setOutfit}
+            />
           </div>
         )}
 
@@ -843,12 +961,10 @@ function TravelActivityCard({
             Gasto
           </button>
 
-          {hasDetails && (
-            <button className="event-action" onClick={() => setDetailsOpen(!detailsOpen)}>
-              <ChevronRight size={15} />
-              {detailsOpen ? 'Fechar' : 'Detalhes'}
-            </button>
-          )}
+          <button className="event-action" onClick={() => setDetailsOpen(!detailsOpen)}>
+            <ChevronRight size={15} />
+            {detailsOpen ? 'Fechar' : 'Detalhes'}
+          </button>
 
           <button className="event-action conclude" onClick={onToggleCompleted}>
             <CheckCircle2 size={15} />
@@ -869,6 +985,457 @@ function TravelActivityCard({
         onClose={() => setPreviewDoc(undefined)}
       />
     </article>
+  );
+}
+
+
+function EventOutfitSection({
+  activity,
+  outfit,
+  onChange,
+}: {
+  activity: Activity;
+  outfit?: OutfitPhoto;
+  onChange: (outfit?: OutfitPhoto) => void;
+}) {
+  const [url, setUrl] = useState<string | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let objectUrl: string | undefined;
+    let cancelled = false;
+
+    if (!outfit) {
+      setUrl(undefined);
+      setMissing(false);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setMissing(false);
+
+    getFile(outfit.storageId)
+      .then((file) => {
+        if (cancelled) return;
+        if (!file) {
+          setMissing(true);
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(file);
+        setUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setMissing(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [outfit?.storageId, outfit?.createdAt]);
+
+  async function savePhoto(file: File, source: OutfitPhoto['source']) {
+    if (!file.type.startsWith('image/')) {
+      setError('Escolha uma imagem da câmera ou da galeria.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    const storageId = outfit?.storageId || `outfit-${activity.id}`;
+
+    try {
+      await putFile(storageId, file);
+      onChange({
+        storageId,
+        original: file.name || 'Foto do look',
+        createdAt: new Date().toISOString(),
+        source,
+      });
+    } catch {
+      setError('Não foi possível salvar a foto neste aparelho.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function removePhoto() {
+    if (!outfit) return;
+    try {
+      await deleteFile(outfit.storageId);
+    } finally {
+      setPreviewOpen(false);
+      onChange(undefined);
+    }
+  }
+
+  function chooseFile(
+    event: ChangeEvent<HTMLInputElement>,
+    source: OutfitPhoto['source'],
+  ) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    if (file) void savePhoto(file, source);
+  }
+
+  return (
+    <div className="event-outfit">
+      <div className="event-outfit-head">
+        <div>
+          <Camera size={15} />
+          <b>Look do evento</b>
+        </div>
+        {outfit && <span>salvo neste aparelho</span>}
+      </div>
+
+      {!outfit ? (
+        <div className="outfit-empty">
+          <p>Adicione uma foto da roupa planejada para este compromisso.</p>
+          <div className="outfit-picker-actions">
+            <label className="outfit-picker primary-outfit-picker">
+              <Camera size={15} />
+              Tirar foto
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(event) => chooseFile(event, 'camera')}
+                disabled={loading}
+              />
+            </label>
+
+            <label className="outfit-picker">
+              <FolderOpen size={15} />
+              Galeria
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(event) => chooseFile(event, 'gallery')}
+                disabled={loading}
+              />
+            </label>
+          </div>
+        </div>
+      ) : (
+        <div className="outfit-saved">
+          <button
+            type="button"
+            className="outfit-thumbnail"
+            onClick={() => setPreviewOpen(true)}
+            disabled={!url}
+            aria-label="Visualizar foto do look"
+          >
+            {url ? (
+              <img src={url} alt={`Look para ${activity.title}`} />
+            ) : (
+              <span>{loading ? 'Carregando…' : 'Foto indisponível'}</span>
+            )}
+          </button>
+
+          <div className="outfit-saved-main">
+            <b>{outfit.original || 'Foto do look'}</b>
+            <span>{outfit.source === 'camera' ? 'Foto tirada no aparelho' : 'Foto da galeria'}</span>
+            {missing && <small>O arquivo não foi encontrado neste aparelho.</small>}
+
+            <div className="outfit-saved-actions">
+              <button
+                type="button"
+                className="outfit-action view"
+                onClick={() => setPreviewOpen(true)}
+                disabled={!url}
+              >
+                <Eye size={14} />
+                Ver
+              </button>
+
+              <label className="outfit-action">
+                <Camera size={14} />
+                Câmera
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(event) => chooseFile(event, 'camera')}
+                  disabled={loading}
+                />
+              </label>
+
+              <label className="outfit-action">
+                <FolderOpen size={14} />
+                Galeria
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(event) => chooseFile(event, 'gallery')}
+                  disabled={loading}
+                />
+              </label>
+
+              <button
+                type="button"
+                className="outfit-action danger"
+                onClick={() => void removePhoto()}
+                disabled={loading}
+              >
+                <Trash2 size={14} />
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading && <span className="outfit-saving">Salvando foto…</span>}
+      {error && <span className="outfit-error">{error}</span>}
+
+      <Dialog
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        title={`Look • ${activity.title}`}
+      >
+        <div className="outfit-preview">
+          {url ? (
+            <img src={url} alt={`Look para ${activity.title}`} />
+          ) : (
+            <div className="document-preview-message">Foto não disponível neste aparelho.</div>
+          )}
+          <div className="outfit-preview-footer">
+            <span>Esta foto fica somente neste aparelho.</span>
+          </div>
+        </div>
+      </Dialog>
+    </div>
+  );
+}
+
+
+function EventWeatherCard({
+  activity,
+  place,
+}: {
+  activity: Activity;
+  place?: Place;
+}) {
+  const [weather, setWeather] = useState<EventWeather | undefined>();
+  const [loading, setLoading] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  async function refresh(force = false) {
+    setLoading(true);
+    try {
+      const next = await getEventWeather(activity, place, { force });
+      setWeather(next);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initialLoad() {
+      const next = await getEventWeather(activity, place);
+      if (!cancelled) setWeather(next);
+    }
+
+    void initialLoad();
+
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void getEventWeather(activity, place).then((next) => {
+        if (!cancelled) setWeather(next);
+      });
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [activity.id, activity.date, activity.time, activity.city, place?.id]);
+
+  if (!weather && loading) {
+    return (
+      <div className="event-weather weather-loading">
+        <span className="weather-icon">🌤️</span>
+        <span>Atualizando previsão…</span>
+      </div>
+    );
+  }
+
+  if (!weather) {
+    return (
+      <div className="event-weather weather-loading">
+        <span className="weather-icon">🌤️</span>
+        <span>Carregando previsão…</span>
+      </div>
+    );
+  }
+
+  if (weather.status === 'not-yet-available') {
+    return (
+      <div className="event-weather weather-unavailable">
+        <div className="weather-main-static">
+          <span className="weather-icon">🗓️</span>
+          <div className="weather-copy">
+            <b>Previsão ainda não disponível</b>
+            <span>{weather.message}</span>
+          </div>
+        </div>
+        <span className="weather-source">Open-Meteo • janela de até 16 dias</span>
+      </div>
+    );
+  }
+
+  if (weather.status !== 'ready') {
+    return (
+      <div className="event-weather weather-error">
+        <div className="weather-main-static">
+          <span className="weather-icon">🌥️</span>
+          <div className="weather-copy">
+            <b>Previsão indisponível agora</b>
+            <span>{weather.message}</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="weather-refresh"
+          onClick={() => void refresh(true)}
+          disabled={loading}
+          aria-label="Atualizar previsão"
+        >
+          <RefreshCw size={15} className={loading ? 'weather-spin' : ''} />
+          Atualizar
+        </button>
+      </div>
+    );
+  }
+
+  const visual = weatherVisual(weather.weatherCode);
+  const probability = weather.precipitationProbability;
+  const mm = weather.precipitationMm;
+  const riskClass =
+    (probability || 0) >= 70 || (mm || 0) >= 5
+      ? 'weather-risk-high'
+      : (probability || 0) >= 40 || (mm || 0) >= 1
+        ? 'weather-risk-medium'
+        : 'weather-risk-low';
+
+  const temperatureText = weather.mode === 'hourly'
+    ? weather.temperature !== undefined
+      ? `${Math.round(weather.temperature)}°C`
+      : '—'
+    : weather.temperatureMin !== undefined && weather.temperatureMax !== undefined
+      ? `${Math.round(weather.temperatureMin)}–${Math.round(weather.temperatureMax)}°C`
+      : '—';
+
+  const precipitationText = mm !== undefined
+    ? weather.mode === 'hourly'
+      ? `${mm.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mm/${weather.precipitationWindowHours || 1}h`
+      : `${mm.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mm/dia`
+    : '— mm';
+
+  const advice = precipitationAdvice(probability, mm);
+
+  return (
+    <div className={`event-weather ${riskClass} ${weather.stale ? 'weather-stale' : ''}`}>
+      <div className="weather-topline">
+        <button
+          type="button"
+          className="weather-summary"
+          onClick={() => setDetailsOpen(!detailsOpen)}
+          aria-expanded={detailsOpen}
+        >
+          <span className="weather-icon">{visual.icon}</span>
+          <div className="weather-copy">
+            <b>
+              {temperatureText}
+              {' · '}
+              chuva {probability !== undefined ? `${probability}%` : '—'}
+              {' · '}
+              {precipitationText}
+            </b>
+            <span>
+              {visual.label}
+              {weather.stale ? ' • última previsão salva' : ''}
+            </span>
+            <span className={`weather-advice weather-advice-${advice.tone}`}>
+              {advice.icon} {advice.label}
+            </span>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className="weather-refresh"
+          onClick={() => void refresh(true)}
+          disabled={loading}
+          aria-label="Atualizar previsão deste evento"
+        >
+          <RefreshCw size={15} className={loading ? 'weather-spin' : ''} />
+          <span>{loading ? 'Atualizando' : 'Atualizar'}</span>
+        </button>
+      </div>
+
+      {detailsOpen && (
+        <div className="weather-details">
+          <div>
+            <span>Risco de precipitação</span>
+            <b>{probability !== undefined ? `${probability}%` : '—'}</b>
+          </div>
+          <div>
+            <span>Volume previsto</span>
+            <b>{precipitationText}</b>
+          </div>
+          <div className={`weather-recommendation weather-recommendation-${advice.tone}`}>
+            <span>Recomendação</span>
+            <b>{advice.icon} {advice.label}</b>
+          </div>
+          {weather.apparentTemperature !== undefined && (
+            <div>
+              <span>Sensação</span>
+              <b>{Math.round(weather.apparentTemperature)}°C</b>
+            </div>
+          )}
+          {weather.windKmh !== undefined && (
+            <div>
+              <span>Vento</span>
+              <b>{Math.round(weather.windKmh)} km/h</b>
+            </div>
+          )}
+          <div>
+            <span>Referência</span>
+            <b>{weather.mode === 'hourly' ? weather.timeLabel || 'Horário do evento' : 'Dia inteiro'}</b>
+          </div>
+          <div>
+            <span>Local</span>
+            <b>{weather.location}</b>
+          </div>
+        </div>
+      )}
+
+      <div className="weather-meta">
+        <span>
+          {weather.fetchedAt
+            ? `Atualizado ${weatherUpdatedLabel(weather.fetchedAt)}`
+            : 'Previsão salva'}
+        </span>
+        <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">
+          Dados: Open-Meteo
+        </a>
+      </div>
+    </div>
   );
 }
 
